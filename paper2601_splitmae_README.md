@@ -4,6 +4,9 @@ This document describes the isolated implementation files for the Split Learning
 adaptation of the paper method. All files are intentionally kept at the
 repository root and are not wired into the existing package.
 
+All CLI examples assume a Linux/Ubuntu shell and are intended to be run after
+pulling the repository on the Linux host.
+
 ## Files
 
 | File | Purpose |
@@ -211,13 +214,13 @@ Run all commands from the repository root.
 1. Syntax check:
 
 ```bash
-python -m compileall ^
-  paper2601_standard_ast.py ^
-  paper2601_splitmae_utils.py ^
-  paper2601_splitmae_client.py ^
-  paper2601_splitmae_server.py ^
-  paper2601_splitmae_training.py ^
-  paper2601_splitmae_cli.py ^
+python -m compileall \
+  paper2601_standard_ast.py \
+  paper2601_splitmae_utils.py \
+  paper2601_splitmae_client.py \
+  paper2601_splitmae_server.py \
+  paper2601_splitmae_training.py \
+  paper2601_splitmae_cli.py \
   paper2601_splitmae_smoke.py
 ```
 
@@ -230,81 +233,81 @@ uv run --no-sync python paper2601_splitmae_cli.py smoke
 3. Inspect split tensor shapes before touching real data:
 
 ```bash
-uv run --no-sync python paper2601_splitmae_cli.py inspect ^
-  --model-size tiny ^
-  --input-fdim 128 ^
-  --input-tdim 64 ^
-  --n-client-blocks 1 ^
+uv run --no-sync python paper2601_splitmae_cli.py inspect \
+  --model-size tiny \
+  --input-fdim 128 \
+  --input-tdim 64 \
+  --n-client-blocks 1 \
   --static-feature-dim 131
 ```
 
 4. Run a very small Stage 1 MAE pass on the real loaders:
 
 ```bash
-uv run --no-sync python paper2601_splitmae_cli.py train-stage1 ^
-  --vowel a ^
-  --model-size tiny ^
-  --input-fdim 128 ^
-  --input-tdim 64 ^
-  --n-client-blocks 1 ^
-  --n-partitions 2 ^
-  --batch-size 8 ^
-  --n-global-rounds 1 ^
-  --n-local-epochs 1 ^
+uv run --no-sync python paper2601_splitmae_cli.py train-stage1 \
+  --vowel a \
+  --model-size tiny \
+  --input-fdim 128 \
+  --input-tdim 64 \
+  --n-client-blocks 1 \
+  --n-partitions 2 \
+  --batch-size 8 \
+  --n-global-rounds 1 \
+  --n-local-epochs 1 \
   --run-name debug_stage1_a
 ```
 
 5. Run a matching Stage 2 classifier pass, loading the Stage 1 weights:
 
 ```bash
-uv run --no-sync python paper2601_splitmae_cli.py train-stage2 ^
-  --vowel a ^
-  --model-size tiny ^
-  --input-fdim 128 ^
-  --input-tdim 64 ^
-  --n-client-blocks 1 ^
-  --n-partitions 2 ^
-  --batch-size 8 ^
-  --n-global-rounds 1 ^
-  --n-local-epochs 1 ^
-  --num-labels 1 ^
-  --load-client paper2601_splitmae_runs/debug_stage1_a_client.pt ^
-  --load-server paper2601_splitmae_runs/debug_stage1_a_server.pt ^
+uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
+  --vowel a \
+  --model-size tiny \
+  --input-fdim 128 \
+  --input-tdim 64 \
+  --n-client-blocks 1 \
+  --n-partitions 2 \
+  --batch-size 8 \
+  --n-global-rounds 1 \
+  --n-local-epochs 1 \
+  --num-labels 1 \
+  --load-client paper2601_splitmae_runs/debug_stage1_a_client.pt \
+  --load-server paper2601_splitmae_runs/debug_stage1_a_server.pt \
   --run-name debug_stage2_a
 ```
 
 6. Move to a runbook-compatible AST setup after the debug commands pass:
 
 ```bash
-uv run --no-sync python paper2601_splitmae_cli.py train-stage1 ^
-  --vowel a ^
-  --model-size base384 ^
-  --input-fdim 128 ^
-  --input-tdim 259 ^
-  --n-client-blocks 2 ^
-  --n-partitions 5 ^
-  --batch-size 16 ^
-  --n-global-rounds 10 ^
-  --n-local-epochs 5 ^
+uv run --no-sync python paper2601_splitmae_cli.py train-stage1 \
+  --vowel a \
+  --model-size base384 \
+  --input-fdim 128 \
+  --input-tdim 259 \
+  --n-client-blocks 2 \
+  --n-partitions 5 \
+  --batch-size 16 \
+  --n-global-rounds 10 \
+  --n-local-epochs 5 \
   --run-name ast_stage1_a
 ```
 
 7. Fine-tune from that Stage 1 checkpoint:
 
 ```bash
-uv run --no-sync python paper2601_splitmae_cli.py train-stage2 ^
-  --vowel a ^
-  --model-size base384 ^
-  --input-fdim 128 ^
-  --input-tdim 259 ^
-  --n-client-blocks 2 ^
-  --n-partitions 5 ^
-  --batch-size 16 ^
-  --n-global-rounds 20 ^
-  --n-local-epochs 5 ^
-  --num-labels 1 ^
-  --load-client paper2601_splitmae_runs/ast_stage1_a_client.pt ^
-  --load-server paper2601_splitmae_runs/ast_stage1_a_server.pt ^
+uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
+  --vowel a \
+  --model-size base384 \
+  --input-fdim 128 \
+  --input-tdim 259 \
+  --n-client-blocks 2 \
+  --n-partitions 5 \
+  --batch-size 16 \
+  --n-global-rounds 20 \
+  --n-local-epochs 5 \
+  --num-labels 1 \
+  --load-client paper2601_splitmae_runs/ast_stage1_a_client.pt \
+  --load-server paper2601_splitmae_runs/ast_stage1_a_server.pt \
   --run-name ast_stage2_a
 ```
 
