@@ -13,8 +13,8 @@ repository root and are not wired into the existing package.
 | `paper2601_splitmae_client.py` | Client-side preprocessing, patch normalization, masking, AST patch embedding, and first AST encoder blocks. |
 | `paper2601_splitmae_server.py` | Server-side remaining AST encoder blocks, lightweight MAE decoder, and Attention-FFNN classifier. |
 | `paper2601_splitmae_training.py` | Standalone SplitFed-style Stage 1 and Stage 2 training helpers. |
+| `paper2601_splitmae_cli.py` | Root-level command-line entry point for inspect, Stage 1, and Stage 2 runs. |
 | `paper2601_splitmae_smoke.py` | Minimal tiny-model smoke example for one Stage 1 and Stage 2 forward/backward pass. |
-| `paper2601_splitmae_bundle.zip` | Flat archive containing the experimental implementation files. |
 
 ## Import Model
 
@@ -29,13 +29,8 @@ from paper2601_splitmae_utils import SmashedData
 ```
 
 This works when running commands from the repository root because Python adds
-the current working directory to its module search path.
-
-It also works if the zip archive is added to `PYTHONPATH` or `sys.path`.
-`PYTHONPATH` is an environment variable that adds import search locations before
-Python starts. `sys.path` is the in-process Python list of import search
-locations. Adding `paper2601_splitmae_bundle.zip` to either one lets Python
-import modules directly from the zip archive.
+the current working directory to its module search path. No packaging or
+installation step is required for this isolated workflow.
 
 The implementation uses `timm==0.4.5` to instantiate the standard AST/DeiT
 backbone. It does not import the repository's SSAST model.
@@ -192,14 +187,14 @@ Current batch formats:
 From the repository root:
 
 ```bash
-uv run --no-sync python paper2601_splitmae_smoke.py
+uv run --no-sync python paper2601_splitmae_cli.py smoke
 ```
 
 If `uv` is unavailable but the current Python environment has the project
 dependencies installed:
 
 ```bash
-python paper2601_splitmae_smoke.py
+python paper2601_splitmae_cli.py smoke
 ```
 
 The smoke script uses `model_size="tiny"` and shorter `input_tdim` to keep the
@@ -211,19 +206,116 @@ test cheap. It checks:
 
 ## Recommended Run Sequence
 
-1. Run `python -m compileall paper2601_splitmae_*.py` from the repository root.
-2. Run `paper2601_splitmae_smoke.py` in an environment with `torch` and
-   `timm==0.4.5`.
-3. Start with `model_size="tiny"`, `input_tdim=64`, and `n_client_blocks=1` for
-   debugging.
-4. Move to the runbook-compatible setup: `model_size="base384"`,
-   `input_fdim=128`, `input_tdim=259`, `n_client_blocks=2`.
-5. Run Stage 1 first until MA-Error is stable.
-6. Reuse the Stage 1 client/server weights for Stage 2 fine-tuning.
-7. For the current binary dysphonia labels, use `num_labels=1` and
-   `BCEWithLogitsLoss`.
-8. If a true multi-label target matrix is introduced later, set `num_labels` to
-   the label count and pass labels shaped `(B, num_labels)`.
+Run all commands from the repository root.
+
+1. Syntax check:
+
+```bash
+python -m compileall ^
+  paper2601_standard_ast.py ^
+  paper2601_splitmae_utils.py ^
+  paper2601_splitmae_client.py ^
+  paper2601_splitmae_server.py ^
+  paper2601_splitmae_training.py ^
+  paper2601_splitmae_cli.py ^
+  paper2601_splitmae_smoke.py
+```
+
+2. Cheap synthetic smoke run:
+
+```bash
+uv run --no-sync python paper2601_splitmae_cli.py smoke
+```
+
+3. Inspect split tensor shapes before touching real data:
+
+```bash
+uv run --no-sync python paper2601_splitmae_cli.py inspect ^
+  --model-size tiny ^
+  --input-fdim 128 ^
+  --input-tdim 64 ^
+  --n-client-blocks 1 ^
+  --static-feature-dim 131
+```
+
+4. Run a very small Stage 1 MAE pass on the real loaders:
+
+```bash
+uv run --no-sync python paper2601_splitmae_cli.py train-stage1 ^
+  --vowel a ^
+  --model-size tiny ^
+  --input-fdim 128 ^
+  --input-tdim 64 ^
+  --n-client-blocks 1 ^
+  --n-partitions 2 ^
+  --batch-size 8 ^
+  --n-global-rounds 1 ^
+  --n-local-epochs 1 ^
+  --run-name debug_stage1_a
+```
+
+5. Run a matching Stage 2 classifier pass, loading the Stage 1 weights:
+
+```bash
+uv run --no-sync python paper2601_splitmae_cli.py train-stage2 ^
+  --vowel a ^
+  --model-size tiny ^
+  --input-fdim 128 ^
+  --input-tdim 64 ^
+  --n-client-blocks 1 ^
+  --n-partitions 2 ^
+  --batch-size 8 ^
+  --n-global-rounds 1 ^
+  --n-local-epochs 1 ^
+  --num-labels 1 ^
+  --load-client paper2601_splitmae_runs/debug_stage1_a_client.pt ^
+  --load-server paper2601_splitmae_runs/debug_stage1_a_server.pt ^
+  --run-name debug_stage2_a
+```
+
+6. Move to a runbook-compatible AST setup after the debug commands pass:
+
+```bash
+uv run --no-sync python paper2601_splitmae_cli.py train-stage1 ^
+  --vowel a ^
+  --model-size base384 ^
+  --input-fdim 128 ^
+  --input-tdim 259 ^
+  --n-client-blocks 2 ^
+  --n-partitions 5 ^
+  --batch-size 16 ^
+  --n-global-rounds 10 ^
+  --n-local-epochs 5 ^
+  --run-name ast_stage1_a
+```
+
+7. Fine-tune from that Stage 1 checkpoint:
+
+```bash
+uv run --no-sync python paper2601_splitmae_cli.py train-stage2 ^
+  --vowel a ^
+  --model-size base384 ^
+  --input-fdim 128 ^
+  --input-tdim 259 ^
+  --n-client-blocks 2 ^
+  --n-partitions 5 ^
+  --batch-size 16 ^
+  --n-global-rounds 20 ^
+  --n-local-epochs 5 ^
+  --num-labels 1 ^
+  --load-client paper2601_splitmae_runs/ast_stage1_a_client.pt ^
+  --load-server paper2601_splitmae_runs/ast_stage1_a_server.pt ^
+  --run-name ast_stage2_a
+```
+
+For the current binary dysphonia labels, keep `--num-labels 1`, which uses
+`BCEWithLogitsLoss` internally. If a true multi-label target matrix is
+introduced later, set `--num-labels` to the label count and make the loader emit
+labels shaped `(B, num_labels)`.
+
+The commands above use the default data paths from the project runbook. Override
+them with `--pickle-dir`, or with both `--pickle-dir-eent` and
+`--pickle-dir-svd`, if needed.
 
 ## pyproject.toml
 
