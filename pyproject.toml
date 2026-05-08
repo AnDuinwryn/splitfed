@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dysphonia-detection"
+version = "0.1.0"
+description = "PyTorch training/evaluation for voice disorder mel baselines"
+requires-python = ">=3.9,<3.11"
+dependencies = [
+  "torch==2.8.0",
+  "torchvision==0.23.0",
+  "torchaudio==2.8.0",
+  "numpy==2.0.2",
+  "pandas==2.3.3",
+  "openpyxl==3.1.5",
+  "scikit-learn==1.6.1",
+  "scipy==1.13.1",
+  "librosa==0.11.0",
+  "joblib==1.5.3",
+  "matplotlib==3.9.4",
+  "seaborn==0.13.2",
+  "timm==0.4.5",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["voice_disorder_torch*"]

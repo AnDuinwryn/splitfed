@@ -1,0 +1,13 @@
+__pycache__/
+.venv/
+*.egg-info/
+
+Data/
+metadata/subjects/
+pretrained_models/
+
+saved_models/
+
+*.xlsx
+*.pt
+*.pth
