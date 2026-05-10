@@ -104,6 +104,19 @@ def _set_run_seed(seed: int) -> None:
     from voice_disorder_torch.reproducibility import set_reproducible
 
     set_reproducible(int(seed))
+    torch = _load_torch()
+    if torch.cuda.is_available():
+        try:
+            torch.backends.cuda.enable_flash_sdp(False)
+            torch.backends.cuda.enable_mem_efficient_sdp(False)
+            torch.backends.cuda.enable_math_sdp(True)
+        except Exception:
+            pass
+        try:
+            torch.backends.cuda.matmul.allow_tf32 = False
+            torch.backends.cudnn.allow_tf32 = False
+        except Exception:
+            pass
 
 
 def _live_block(height: int):

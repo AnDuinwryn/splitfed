@@ -218,6 +218,12 @@ determinism, and deterministic algorithms on a best-effort basis. The training
 display follows the existing split-learning style: `global_epoch`, a compact
 summary line, and one participant line per client partition.
 
+Because the paper model introduces Transformer attention in the isolated MAE
+path, the CLI also disables CUDA flash and memory-efficient scaled-dot-product
+attention backends for this process, uses the math attention backend, and
+disables TF32 for CUDA matmul/cuDNN. This is kept in the root-level experiment
+files only.
+
 1. Syntax check:
 
 ```bash
@@ -444,7 +450,9 @@ creating a formal package namespace.
 - Training defaults use AdamW with betas `(0.9, 0.95)` and weight decay `0.05`.
 - Training and evaluation entry points call the existing project reproducibility
   helper using `--model-init-seed`; the full-pipeline shell script also exports
-  `PYTHONHASHSEED` and `CUBLAS_WORKSPACE_CONFIG` before starting Python.
+  `PYTHONHASHSEED` and `CUBLAS_WORKSPACE_CONFIG` before starting Python, and the
+  root-level CLI additionally forces CUDA SDPA to the math backend for the
+  Transformer attention path.
 - Content-aware masking follows the paper's high-variance candidate-pool rule:
   select the top `max(70% * N_mask, 50% * N_total)` patches by variance, sample
   70% of masked patches from that group, and sample the rest from remaining
