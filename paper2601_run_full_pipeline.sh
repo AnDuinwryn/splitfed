@@ -71,8 +71,7 @@ run_train_stage1() {
     --vowel "${vowel}" \
     --n-global-rounds "${N_GLOBAL_STAGE1}" \
     --run-name "${run_name}" \
-    ${EXTRA_ARGS} \
-    | tee "${RUN_DIR}/${run_name}.log"
+    ${EXTRA_ARGS}
 }
 
 run_train_stage2() {
@@ -87,8 +86,7 @@ run_train_stage2() {
     --load-client "${RUN_DIR}/ast_stage1_${vowel}_client.pt" \
     --load-server "${RUN_DIR}/ast_stage1_${vowel}_server.pt" \
     --run-name "${run_name}" \
-    ${EXTRA_ARGS} \
-    | tee "${RUN_DIR}/${run_name}.log"
+    ${EXTRA_ARGS}
 }
 
 run_train_stage1 a
@@ -101,5 +99,4 @@ uv run --no-sync python paper2601_splitmae_cli.py evaluate-stage2-pair \
   --metadata-i "${RUN_DIR}/ast_stage2_i_metadata.json" \
   --eval-dataset both \
   --results-json "${RUN_DIR}/ast_stage2_ai_eval.json" \
-  ${EXTRA_ARGS} \
-  | tee "${RUN_DIR}/ast_stage2_ai_eval.log"
+  ${EXTRA_ARGS}
