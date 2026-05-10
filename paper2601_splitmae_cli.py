@@ -12,8 +12,8 @@ PAPER_ADAMW_BETAS = (0.9, 0.95)
 PAPER_WEIGHT_DECAY = 0.05
 PAPER_FOCAL_GAMMA = 2.0
 PAPER_STAGE1_REFERENCE_EPOCHS = 120
-PROJECT_STAGE1_MAX_ROUNDS = 64
-PROJECT_STAGE2_MAX_ROUNDS = 64
+PROJECT_STAGE1_MAX_ROUNDS = 120
+PROJECT_STAGE2_MAX_ROUNDS = 250
 PAPER_STAGE2_EARLY_STOPPING_PATIENCE = 10
 
 
@@ -35,7 +35,7 @@ def _add_data_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--train-val-seed", type=int, default=100)
     p.add_argument("--partition-seed", type=int, default=42)
     p.add_argument("--n-partitions", type=_positive_int, default=5)
-    p.add_argument("--batch-size", type=_positive_int, default=256)
+    p.add_argument("--batch-size", type=_positive_int, default=64)
 
 
 def _add_model_args(p: argparse.ArgumentParser) -> None:

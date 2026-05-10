@@ -295,9 +295,8 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
   --run-name debug_stage2_a
 ```
 
-6. Current Stage 1 run. This keeps the paper's Stage 1 objective, but uses a
-   shorter SplitFed schedule for this repository experiment: 64 global rounds
-   and 5 local epochs per round.
+6. Current Stage 1 run. This keeps the paper's Stage 1 objective and restores
+   the 120-round pre-training schedule, with 5 local epochs per round.
 
 ```bash
 uv run --no-sync python paper2601_splitmae_cli.py train-stage1 \
@@ -307,7 +306,8 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage1 \
   --input-tdim 259 \
   --n-client-blocks 2 \
   --n-partitions 5 \
-  --n-global-rounds 64 \
+  --batch-size 64 \
+  --n-global-rounds 120 \
   --n-local-epochs 5 \
   --run-name ast_stage1_a
 ```
@@ -324,7 +324,8 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
   --input-tdim 259 \
   --n-client-blocks 2 \
   --n-partitions 5 \
-  --n-global-rounds 64 \
+  --batch-size 64 \
+  --n-global-rounds 250 \
   --n-local-epochs 5 \
   --early-stopping-patience 10 \
   --num-labels 1 \
@@ -372,7 +373,8 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage1 \
   --input-tdim 259 \
   --n-client-blocks 2 \
   --n-partitions 5 \
-  --n-global-rounds 64 \
+  --batch-size 64 \
+  --n-global-rounds 120 \
   --n-local-epochs 5 \
   --run-name ast_stage1_i
 ```
@@ -385,7 +387,8 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
   --input-tdim 259 \
   --n-client-blocks 2 \
   --n-partitions 5 \
-  --n-global-rounds 64 \
+  --batch-size 64 \
+  --n-global-rounds 250 \
   --n-local-epochs 5 \
   --early-stopping-patience 10 \
   --num-labels 1 \
@@ -431,7 +434,7 @@ Common overrides:
 ```bash
 RUN_DIR=paper2601_splitmae_runs \
 DEVICE=cuda \
-BATCH_SIZE=128 \
+BATCH_SIZE=64 \
 STATIC_FEATURE_SOURCE=opensmile \
 STATIC_AUDIO_MANIFEST=metadata/audio_manifest.csv \
 MODEL_INIT_SEED=2718 \
@@ -487,8 +490,8 @@ creating a formal package namespace.
 - Stage 1 uses patch-wise normalized reconstruction targets and an L1-style
   masked absolute error.
 - The paper's Stage 1 reference schedule is 120 epochs. The current isolated
-  experiment defaults to 64 global rounds with 5 local epochs per round, per the
-  latest run setting.
+  experiment defaults to 120 Stage 1 global rounds and 250 Stage 2 global
+  rounds, with 5 local epochs per round in both stages.
 - Training defaults use AdamW with betas `(0.9, 0.95)` and weight decay `0.05`.
 - Training and evaluation entry points call the existing project reproducibility
   helper using `--model-init-seed`; the full-pipeline shell script also exports
