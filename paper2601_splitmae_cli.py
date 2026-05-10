@@ -11,8 +11,9 @@ from typing import Any, Optional
 PAPER_ADAMW_BETAS = (0.9, 0.95)
 PAPER_WEIGHT_DECAY = 0.05
 PAPER_FOCAL_GAMMA = 2.0
-PAPER_STAGE1_EPOCHS = 120
-PROJECT_STAGE2_MAX_ROUNDS = 250
+PAPER_STAGE1_REFERENCE_EPOCHS = 120
+PROJECT_STAGE1_MAX_ROUNDS = 64
+PROJECT_STAGE2_MAX_ROUNDS = 64
 PAPER_STAGE2_EARLY_STOPPING_PATIENCE = 10
 
 
@@ -45,7 +46,11 @@ def _add_model_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--mask-ratio", type=float, default=0.75)
     p.add_argument("--mask-strategy", choices=["content", "random"], default="content")
     p.add_argument("--num-labels", type=_positive_int, default=1)
-    p.add_argument("--static-feature-dim", type=int, default=0)
+    p.add_argument("--static-feature-dim", type=int, default=0, help="Usually inferred when static features are on.")
+    p.add_argument("--static-feature-source", choices=["none", "auto", "mel", "opensmile", "parselmouth"], default="none")
+    p.add_argument("--static-audio-manifest", type=Path, default=None)
+    p.add_argument("--static-audio-root-eent", type=Path, default=None)
+    p.add_argument("--static-audio-root-svd", type=Path, default=None)
     p.add_argument("--pooling", choices=["cls", "mean_patch"], default="cls")
     p.add_argument("--imagenet-pretrain", action="store_true")
     p.add_argument("--audioset-checkpoint-path", type=str, default=None)
@@ -174,10 +179,45 @@ def _make_context(args: argparse.Namespace) -> Any:
     )
 
 
-def _build_loaders(args: argparse.Namespace):
+def _static_config_from_args(args: argparse.Namespace):
+    from paper2601_static_features import StaticFeatureConfig
+
+    return StaticFeatureConfig(
+        source=str(getattr(args, "static_feature_source", "none")),
+        audio_manifest=getattr(args, "static_audio_manifest", None),
+        audio_root_eent=getattr(args, "static_audio_root_eent", None),
+        audio_root_svd=getattr(args, "static_audio_root_svd", None),
+    )
+
+
+def _build_loaders(args: argparse.Namespace, *, include_static: bool = False):
     from voice_disorder_torch.split_learning.loaders import build_ssast_partition_loaders
 
     ctx = _make_context(args)
+    if include_static and str(getattr(args, "static_feature_source", "none")).lower().strip() != "none":
+        from paper2601_static_features import build_static_ssast_partition_loaders
+
+        pack, info = build_static_ssast_partition_loaders(
+            ctx=ctx,
+            vowel=args.vowel,
+            n_partitions=int(args.n_partitions),
+            partition_seed=int(args.partition_seed),
+            input_tdim=int(args.input_tdim),
+            batch_size=int(args.batch_size),
+            config=_static_config_from_args(args),
+        )
+        args.static_feature_dim = int(info.dim)
+        args.static_feature_backend = info.backend
+        args.static_feature_names = info.names
+        args.static_feature_mean = info.mean
+        args.static_feature_std = info.std
+        return pack
+
+    args.static_feature_dim = 0
+    args.static_feature_backend = "none"
+    args.static_feature_names = []
+    args.static_feature_mean = []
+    args.static_feature_std = []
     return build_ssast_partition_loaders(
         ctx=ctx,
         vowel=args.vowel,
@@ -191,6 +231,33 @@ def _build_loaders(args: argparse.Namespace):
 def _device(args: argparse.Namespace):
     torch = _load_torch()
     return torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
+
+
+def _load_matching_state_dict(module, path: Path, *, label: str) -> None:
+    torch = _load_torch()
+    incoming = torch.load(path, map_location="cpu")
+    current = module.state_dict()
+    classifier_mismatch = any(
+        key.startswith("classifier.")
+        and key in current
+        and tuple(current[key].shape) != tuple(value.shape)
+        for key, value in incoming.items()
+    )
+    matched = {}
+    skipped = []
+    for key, value in incoming.items():
+        if classifier_mismatch and key.startswith("classifier."):
+            skipped.append(key)
+            continue
+        if key in current and tuple(current[key].shape) == tuple(value.shape):
+            matched[key] = value
+        else:
+            skipped.append(key)
+    missing, unexpected = module.load_state_dict(matched, strict=False)
+    if skipped:
+        print(f"Loaded {label}: {len(matched)} tensors; skipped {len(skipped)} shape/key mismatches.")
+    elif missing or unexpected:
+        print(f"Loaded {label}: {len(matched)} tensors; missing={len(missing)} unexpected={len(unexpected)}.")
 
 
 def _build_pair(args: argparse.Namespace):
@@ -229,9 +296,9 @@ def _build_pair(args: argparse.Namespace):
     load_client = getattr(args, "load_client", None)
     load_server = getattr(args, "load_server", None)
     if load_client is not None:
-        client.load_state_dict(torch.load(load_client, map_location="cpu"), strict=False)
+        _load_matching_state_dict(client, load_client, label="client")
     if load_server is not None:
-        server.load_state_dict(torch.load(load_server, map_location="cpu"), strict=False)
+        _load_matching_state_dict(server, load_server, label="server")
     return client.to(device), server.to(device), device
 
 
@@ -258,6 +325,20 @@ def _save_pair(args: argparse.Namespace, client, server, stage: str) -> dict[str
         "batch_size": int(args.batch_size),
         "num_labels": int(args.num_labels),
         "static_feature_dim": int(args.static_feature_dim),
+        "static_feature_source": str(getattr(args, "static_feature_source", "none")),
+        "static_feature_backend": str(getattr(args, "static_feature_backend", "none")),
+        "static_feature_names": list(getattr(args, "static_feature_names", [])),
+        "static_feature_mean": list(getattr(args, "static_feature_mean", [])),
+        "static_feature_std": list(getattr(args, "static_feature_std", [])),
+        "static_audio_manifest": (
+            str(args.static_audio_manifest) if getattr(args, "static_audio_manifest", None) is not None else None
+        ),
+        "static_audio_root_eent": (
+            str(args.static_audio_root_eent) if getattr(args, "static_audio_root_eent", None) is not None else None
+        ),
+        "static_audio_root_svd": (
+            str(args.static_audio_root_svd) if getattr(args, "static_audio_root_svd", None) is not None else None
+        ),
         "mask_ratio": float(args.mask_ratio),
         "mask_strategy": str(args.mask_strategy),
         "optimizer": "AdamW",
@@ -267,7 +348,7 @@ def _save_pair(args: argparse.Namespace, client, server, stage: str) -> dict[str
         "server_lr": float(args.server_lr),
         "n_global_rounds": int(args.n_global_rounds),
         "n_local_epochs": int(args.n_local_epochs),
-        "stage1_reference_epochs": PAPER_STAGE1_EPOCHS if stage == "stage1" else None,
+        "stage1_reference_epochs": PAPER_STAGE1_REFERENCE_EPOCHS if stage == "stage1" else None,
         "stage2_loss": "BinaryFocalWithLogitsLoss" if stage == "stage2" else None,
         "stage2_focal_gamma": getattr(args, "focal_gamma", None),
         "stage2_focal_alpha": getattr(args, "focal_alpha", None),
@@ -297,6 +378,7 @@ def _apply_metadata_to_args(args: argparse.Namespace) -> dict:
         "batch_size": "batch_size",
         "num_labels": "num_labels",
         "static_feature_dim": "static_feature_dim",
+        "static_feature_source": "static_feature_source",
         "mask_ratio": "mask_ratio",
         "mask_strategy": "mask_strategy",
         "stage2_focal_gamma": "focal_gamma",
@@ -304,6 +386,16 @@ def _apply_metadata_to_args(args: argparse.Namespace) -> dict:
     for meta_key, arg_name in mapping.items():
         if meta.get(meta_key) is not None and hasattr(args, arg_name):
             setattr(args, arg_name, meta[meta_key])
+    backend = meta.get("static_feature_backend")
+    if backend in {"none", "mel", "opensmile", "parselmouth"} and hasattr(args, "static_feature_source"):
+        args.static_feature_source = backend
+    for meta_key, arg_name in (
+        ("static_audio_manifest", "static_audio_manifest"),
+        ("static_audio_root_eent", "static_audio_root_eent"),
+        ("static_audio_root_svd", "static_audio_root_svd"),
+    ):
+        if meta.get(meta_key) is not None and hasattr(args, arg_name) and getattr(args, arg_name) is None:
+            setattr(args, arg_name, Path(meta[meta_key]))
     if args.load_client is None and meta.get("client_file"):
         args.load_client = Path(meta["client_file"])
     if args.load_server is None and meta.get("server_file"):
@@ -370,7 +462,7 @@ def cmd_train_stage1(args: argparse.Namespace) -> None:
     from paper2601_splitmae_training import Paper2601SplitServerPool, run_stage1_splitfed_round
 
     _set_run_seed(int(args.model_init_seed))
-    pack = _build_loaders(args)
+    pack = _build_loaders(args, include_static=False)
     client, server, device = _build_pair(args)
     optimizer_betas = (float(args.adamw_beta1), float(args.adamw_beta2))
     server_pool = Paper2601SplitServerPool(
@@ -429,7 +521,7 @@ def cmd_train_stage2(args: argparse.Namespace) -> None:
     )
 
     _set_run_seed(int(args.model_init_seed))
-    pack = _build_loaders(args)
+    pack = _build_loaders(args, include_static=True)
     client, server, device = _build_pair(args)
     optimizer_betas = (float(args.adamw_beta1), float(args.adamw_beta2))
     server_pool = Paper2601SplitServerPool(
@@ -519,7 +611,8 @@ def _predict_stage2_positive_probs(client, server, loader, device):
     with torch.no_grad():
         for batch in loader:
             xb = batch[0].to(device)
-            smashed = client(xb, mode="finetune").to(device)
+            static = batch[2].to(device) if isinstance(batch, (tuple, list)) and len(batch) == 3 else None
+            smashed = client(xb, mode="finetune", static_features=static).to(device)
             logits = server.forward_finetune(smashed)["logits"]
             sigmoid = torch.sigmoid(logits)
             if sigmoid.shape[-1] != 1:
@@ -528,12 +621,16 @@ def _predict_stage2_positive_probs(client, server, loader, device):
     return torch.cat(probs, dim=0).numpy()
 
 
-def _stage2_eval_loader(x, y, input_tdim: int, batch_size: int):
+def _stage2_eval_loader(x, y, input_tdim: int, batch_size: int, static_features=None):
     from torch.utils.data import DataLoader
 
+    from paper2601_static_features import SsastMelStaticDataset
     from voice_disorder_torch.data.datasets import SsastMelDataset
 
-    ds = SsastMelDataset(x, y, input_tdim=int(input_tdim))
+    if static_features is None:
+        ds = SsastMelDataset(x, y, input_tdim=int(input_tdim))
+    else:
+        ds = SsastMelStaticDataset(x, y, static_features, input_tdim=int(input_tdim))
     return ds, DataLoader(ds, batch_size=int(batch_size), shuffle=False, num_workers=0)
 
 
@@ -549,6 +646,32 @@ def _printable_pair_eval(results: dict[str, Any]) -> dict[str, Any]:
     for key, value in results.get("datasets", {}).items():
         out[key] = value
     return out
+
+
+def _eval_static_features(args_for_vowel: argparse.Namespace, meta: dict, x, patient_ids, dataset_name: str, vowel: str):
+    dim = int(meta.get("static_feature_dim") or getattr(args_for_vowel, "static_feature_dim", 0) or 0)
+    if dim <= 0:
+        return None
+    from paper2601_static_features import apply_static_normalizer, compute_static_features
+
+    backend = meta.get("static_feature_backend") or getattr(args_for_vowel, "static_feature_source", "none")
+    raw, names, resolved = compute_static_features(
+        x_nhwc=x,
+        patient_ids=patient_ids,
+        dataset=dataset_name,
+        vowel=vowel,
+        config=_static_config_from_args(args_for_vowel),
+        backend=backend,
+    )
+    expected_names = list(meta.get("static_feature_names") or [])
+    if expected_names and names != expected_names:
+        raise SystemExit(
+            f"Static feature names differ for /{vowel}/ {dataset_name}: "
+            f"metadata backend={backend!r}, resolved backend={resolved!r}."
+        )
+    mean = meta.get("static_feature_mean") or []
+    std = meta.get("static_feature_std") or []
+    return apply_static_normalizer(raw, mean, std)
 
 
 def cmd_evaluate_stage2_pair(args: argparse.Namespace) -> None:
@@ -605,8 +728,10 @@ def cmd_evaluate_stage2_pair(args: argparse.Namespace) -> None:
     for dataset_name in selected:
         xa, ya, ida, display_name = _eval_arrays_for_dataset(bundle, "a", dataset_name)
         xi, yi, idi, _ = _eval_arrays_for_dataset(bundle, "i", dataset_name)
-        ds_a, loader_a = _stage2_eval_loader(xa, ya, int(args_a.input_tdim), int(args_a.batch_size))
-        ds_i, loader_i = _stage2_eval_loader(xi, yi, int(args_i.input_tdim), int(args_i.batch_size))
+        static_a = _eval_static_features(args_a, meta_a, xa, ida, dataset_name, "a")
+        static_i = _eval_static_features(args_i, meta_i, xi, idi, dataset_name, "i")
+        ds_a, loader_a = _stage2_eval_loader(xa, ya, int(args_a.input_tdim), int(args_a.batch_size), static_a)
+        ds_i, loader_i = _stage2_eval_loader(xi, yi, int(args_i.input_tdim), int(args_i.batch_size), static_i)
 
         seg_a = evaluate_stage2(client=client_a, server=server_a, loader=loader_a, device=device, criterion=criterion)
         seg_i = evaluate_stage2(client=client_i, server=server_i, loader=loader_i, device=device, criterion=criterion)
@@ -687,7 +812,7 @@ def build_parser() -> argparse.ArgumentParser:
     stage1_p = sub.add_parser("train-stage1", help="Run Stage 1 domain-adaptive MAE split training.")
     _add_data_args(stage1_p)
     _add_model_args(stage1_p)
-    _add_train_args(stage1_p, default_rounds=PAPER_STAGE1_EPOCHS, default_local_epochs=1)
+    _add_train_args(stage1_p, default_rounds=PROJECT_STAGE1_MAX_ROUNDS, default_local_epochs=5)
     stage1_p.set_defaults(func=cmd_train_stage1)
 
     stage2_p = sub.add_parser("train-stage2", help="Run Stage 2 Attention-FFNN split fine-tuning.")
@@ -696,7 +821,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_train_args(
         stage2_p,
         default_rounds=PROJECT_STAGE2_MAX_ROUNDS,
-        default_local_epochs=1,
+        default_local_epochs=5,
         include_early_stopping=True,
         include_focal=True,
     )

@@ -233,6 +233,7 @@ python -m compileall \
   paper2601_splitmae_client.py \
   paper2601_splitmae_server.py \
   paper2601_splitmae_training.py \
+  paper2601_static_features.py \
   paper2601_splitmae_cli.py \
   paper2601_splitmae_smoke.py
 ```
@@ -267,7 +268,7 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage1 \
   --n-partitions 2 \
   --batch-size 8 \
   --n-global-rounds 1 \
-  --n-local-epochs 1 \
+  --n-local-epochs 5 \
   --run-name debug_stage1_a
 ```
 
@@ -287,16 +288,16 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
   --n-partitions 2 \
   --batch-size 8 \
   --n-global-rounds 1 \
-  --n-local-epochs 1 \
+  --n-local-epochs 5 \
   --num-labels 1 \
   --load-client paper2601_splitmae_runs/debug_stage1_a_client.pt \
   --load-server paper2601_splitmae_runs/debug_stage1_a_server.pt \
   --run-name debug_stage2_a
 ```
 
-6. Paper-aligned Stage 1 run. The paper pre-trains Stage 1 for 120 epochs, so
-   the split implementation uses 120 global rounds with one local epoch per
-   round:
+6. Current Stage 1 run. This keeps the paper's Stage 1 objective, but uses a
+   shorter SplitFed schedule for this repository experiment: 64 global rounds
+   and 5 local epochs per round.
 
 ```bash
 uv run --no-sync python paper2601_splitmae_cli.py train-stage1 \
@@ -306,13 +307,14 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage1 \
   --input-tdim 259 \
   --n-client-blocks 2 \
   --n-partitions 5 \
-  --n-global-rounds 120 \
-  --n-local-epochs 1 \
+  --n-global-rounds 64 \
+  --n-local-epochs 5 \
   --run-name ast_stage1_a
 ```
 
 7. Stage 2 fine-tuning from the Stage 1 checkpoint. The paper uses focal loss,
-   Macro F1, and early stopping with patience 10; the CLI defaults follow that:
+   Macro F1, and early stopping with patience 10. Static features can be added
+   here; Stage 1 MAE does not consume them.
 
 ```bash
 uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
@@ -322,16 +324,45 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
   --input-tdim 259 \
   --n-client-blocks 2 \
   --n-partitions 5 \
-  --n-global-rounds 250 \
-  --n-local-epochs 1 \
+  --n-global-rounds 64 \
+  --n-local-epochs 5 \
   --early-stopping-patience 10 \
   --num-labels 1 \
+  --static-feature-source auto \
   --load-client paper2601_splitmae_runs/ast_stage1_a_client.pt \
   --load-server paper2601_splitmae_runs/ast_stage1_a_server.pt \
   --run-name ast_stage2_a
 ```
 
-8. Repeat the same paper-aligned run for vowel `/i/`:
+Static feature source options:
+
+| Source | Behavior |
+| --- | --- |
+| `none` | no static branch; `static_feature_dim=0` |
+| `mel` | built-in 23-dimensional mel summary statistics; always available |
+| `auto` | use OpenSMILE if installed and audio paths are supplied, else Parselmouth if installed and audio paths are supplied, else `mel` |
+| `opensmile` | OpenSMILE eGeMAPSv02 functionals from raw audio; requires audio path resolution |
+| `parselmouth` | compact Praat/Parselmouth pitch, intensity, HNR, duration, RMS features; requires audio path resolution |
+
+For strict audio-based features, provide either a manifest or roots:
+
+```bash
+--static-feature-source opensmile \
+--static-audio-manifest metadata/audio_manifest.csv
+```
+
+The manifest may be CSV or JSON. CSV columns should include `patient_id`,
+`vowel`, and `path`; optional `dataset` values can be `chinese`/`eent` or
+`german`/`svd`. If roots are used instead, the resolver searches recursively for
+audio files whose filename contains the patient id and vowel token:
+
+```bash
+--static-feature-source parselmouth \
+--static-audio-root-eent Data/EENT_raw \
+--static-audio-root-svd Data/SVD_raw
+```
+
+8. Repeat the same current run for vowel `/i/`:
 
 ```bash
 uv run --no-sync python paper2601_splitmae_cli.py train-stage1 \
@@ -341,8 +372,8 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage1 \
   --input-tdim 259 \
   --n-client-blocks 2 \
   --n-partitions 5 \
-  --n-global-rounds 120 \
-  --n-local-epochs 1 \
+  --n-global-rounds 64 \
+  --n-local-epochs 5 \
   --run-name ast_stage1_i
 ```
 
@@ -354,10 +385,11 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
   --input-tdim 259 \
   --n-client-blocks 2 \
   --n-partitions 5 \
-  --n-global-rounds 250 \
-  --n-local-epochs 1 \
+  --n-global-rounds 64 \
+  --n-local-epochs 5 \
   --early-stopping-patience 10 \
   --num-labels 1 \
+  --static-feature-source auto \
   --load-client paper2601_splitmae_runs/ast_stage1_i_client.pt \
   --load-server paper2601_splitmae_runs/ast_stage1_i_server.pt \
   --run-name ast_stage2_i
@@ -373,7 +405,8 @@ uv run --no-sync python paper2601_splitmae_cli.py evaluate-stage2-pair \
   --metadata-a paper2601_splitmae_runs/ast_stage2_a_metadata.json \
   --metadata-i paper2601_splitmae_runs/ast_stage2_i_metadata.json \
   --eval-dataset both \
-  --results-json paper2601_splitmae_runs/ast_stage2_ai_eval.json
+  --results-json paper2601_splitmae_runs/ast_stage2_ai_eval.json \
+  --static-feature-source auto
 ```
 
 The terminal output uses the existing project evaluation display
@@ -399,6 +432,8 @@ Common overrides:
 RUN_DIR=paper2601_splitmae_runs \
 DEVICE=cuda \
 BATCH_SIZE=128 \
+STATIC_FEATURE_SOURCE=opensmile \
+STATIC_AUDIO_MANIFEST=metadata/audio_manifest.csv \
 MODEL_INIT_SEED=2718 \
 bash paper2601_run_full_pipeline.sh
 ```
@@ -451,8 +486,9 @@ creating a formal package namespace.
   `audioset_checkpoint_path=...`.
 - Stage 1 uses patch-wise normalized reconstruction targets and an L1-style
   masked absolute error.
-- Stage 1 defaults to 120 global rounds and one local epoch per round to match
-  the paper's 120 pre-training epochs.
+- The paper's Stage 1 reference schedule is 120 epochs. The current isolated
+  experiment defaults to 64 global rounds with 5 local epochs per round, per the
+  latest run setting.
 - Training defaults use AdamW with betas `(0.9, 0.95)` and weight decay `0.05`.
 - Training and evaluation entry points call the existing project reproducibility
   helper using `--model-init-seed`; the full-pipeline shell script also exports
@@ -468,8 +504,9 @@ creating a formal package namespace.
 - Stage 2 uses focal loss, Macro F1, and early stopping patience 10 by default.
 - `evaluate-stage2-pair` loads the saved best Stage 2 `/a/` and `/i/` weights
   and reports final EENT/SVD test metrics, including combined `/a+i/` scoring.
-- The server classifier supports the paper-style static feature branch through
-  `static_feature_dim`, but current repository loaders do not yet emit static
-  features.
+- The server classifier supports the paper-style static feature branch. In this
+  isolated CLI, Stage 2 can infer `static_feature_dim` from mel summary
+  features, OpenSMILE eGeMAPSv02 functionals, or Parselmouth/Praat features.
+  Stage 1 MAE does not consume static features.
 - The files are intentionally root-level and flat. This keeps import behavior
   simple for review and preserves isolation from the main pipeline.

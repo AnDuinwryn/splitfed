@@ -85,14 +85,14 @@ class Paper2601SplitMAEClient(nn.Module):
         x = crop_or_pad_b1ft(x, self.config.input_fdim, self.config.input_tdim)
         return pad_to_patch_grid(x, self.patch_grid)
 
-    def _patchwise_model_input(self, x_b1ft: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def _patchwise_model_input(self, x_b1ft: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         raw_patches = patchify_b1ft(x_b1ft, self.patch_grid)
         norm_patches, _, _ = patchwise_normalize(raw_patches)
         if self.config.normalize_input:
             x_model = unpatchify_b1ft(norm_patches, self.patch_grid)
         else:
             x_model = x_b1ft
-        return x_model, norm_patches
+        return x_model, raw_patches, norm_patches
 
     def _prepend_special_tokens(self, patch_tokens: torch.Tensor, patch_pos: torch.Tensor) -> torch.Tensor:
         b = patch_tokens.shape[0]
@@ -126,7 +126,7 @@ class Paper2601SplitMAEClient(nn.Module):
 
         stage = "pretrain" if mode in {"pretrain", "stage1"} else "finetune"
         x_b1ft = self._canonical_input(x)
-        x_model, norm_patches = self._patchwise_model_input(x_b1ft)
+        x_model, raw_patches, norm_patches = self._patchwise_model_input(x_b1ft)
         patch_tokens = self.v.patch_embed(x_model)
         b, n, _ = patch_tokens.shape
         if n != self.patch_grid.num_patches:
@@ -136,7 +136,7 @@ class Paper2601SplitMAEClient(nn.Module):
 
         if stage == "pretrain":
             ids_keep, ids_restore, mask = make_mask(
-                norm_patches.detach(),
+                raw_patches.detach(),
                 mask_ratio=self.config.mask_ratio if mask_ratio is None else float(mask_ratio),
                 strategy=self.config.mask_strategy if mask_strategy is None else str(mask_strategy),
             )
