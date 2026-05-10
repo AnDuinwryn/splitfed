@@ -25,7 +25,7 @@ def main() -> None:
         n_client_blocks=1,
         decoder_embed_dim=256,
         decoder_depth=1,
-        decoder_num_heads=4,
+        decoder_num_heads=8,
         num_labels=1,
         static_feature_dim=131,
     )

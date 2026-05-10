@@ -6,11 +6,17 @@ from typing import Iterable, Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from paper2601_splitmae_client import Paper2601SplitMAEClient
 from paper2601_splitmae_server import Paper2601SplitMAEServer
 from paper2601_splitmae_utils import SmashedData, average_state_dicts, labels_for_bce
+
+
+PAPER_ADAMW_BETAS = (0.9, 0.95)
+PAPER_WEIGHT_DECAY = 0.05
+PAPER_FOCAL_GAMMA = 2.0
 
 
 @dataclass
@@ -29,10 +35,47 @@ def unpack_batch(batch) -> tuple[torch.Tensor, Optional[torch.Tensor], Optional[
     raise ValueError("Expected DataLoader batch shaped as (x,y) or (x,y,static_features).")
 
 
-def multilabel_accuracy(logits: torch.Tensor, labels: torch.Tensor) -> float:
+def _binary_f1(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    pred = pred.float()
+    target = target.float()
+    tp = (pred * target).sum()
+    fp = (pred * (1.0 - target)).sum()
+    fn = ((1.0 - pred) * target).sum()
+    denom = (2.0 * tp + fp + fn).clamp_min(1e-12)
+    return (2.0 * tp) / denom
+
+
+def macro_f1_score(logits: torch.Tensor, labels: torch.Tensor) -> float:
     labels = labels_for_bce(labels.to(logits.device), logits.shape[-1])
     pred = (torch.sigmoid(logits) >= 0.5).float()
-    return float((pred == labels).float().mean().item())
+    if pred.shape[-1] == 1:
+        pred_flat = pred.view(-1)
+        labels_flat = labels.view(-1)
+        positive_f1 = _binary_f1(pred_flat, labels_flat)
+        negative_f1 = _binary_f1(1.0 - pred_flat, 1.0 - labels_flat)
+        return float(torch.stack([negative_f1, positive_f1]).mean().item())
+    scores = [_binary_f1(pred[:, idx], labels[:, idx]) for idx in range(pred.shape[-1])]
+    return float(torch.stack(scores).mean().item())
+
+
+class BinaryFocalWithLogitsLoss(nn.Module):
+    """Multi-label focal loss over logits, matching the paper's Stage 2 loss family."""
+
+    def __init__(self, gamma: float = PAPER_FOCAL_GAMMA, alpha: Optional[float] = None) -> None:
+        super().__init__()
+        self.gamma = float(gamma)
+        self.alpha = None if alpha is None else float(alpha)
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        targets = targets.float()
+        bce = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
+        probs = torch.sigmoid(logits)
+        pt = probs * targets + (1.0 - probs) * (1.0 - targets)
+        loss = ((1.0 - pt).clamp_min(1e-8) ** self.gamma) * bce
+        if self.alpha is not None:
+            alpha_t = self.alpha * targets + (1.0 - self.alpha) * (1.0 - targets)
+            loss = alpha_t * loss
+        return loss.mean()
 
 
 class Paper2601SplitServerPool:
@@ -46,11 +89,24 @@ class Paper2601SplitServerPool:
         server_lr: float,
         device: torch.device | str,
         finetune_criterion: Optional[nn.Module] = None,
+        optimizer_betas: tuple[float, float] = PAPER_ADAMW_BETAS,
+        weight_decay: float = PAPER_WEIGHT_DECAY,
     ) -> None:
         self.device = torch.device(device)
         self.server_models = [copy.deepcopy(server_template).to(self.device) for _ in range(int(n_partitions))]
-        self.server_opts = [torch.optim.Adam(model.parameters(), lr=float(server_lr)) for model in self.server_models]
-        self.finetune_criterion = finetune_criterion or nn.BCEWithLogitsLoss()
+        self.server_lr = float(server_lr)
+        self.optimizer_betas = (float(optimizer_betas[0]), float(optimizer_betas[1]))
+        self.weight_decay = float(weight_decay)
+        self.server_opts = [
+            torch.optim.AdamW(
+                model.parameters(),
+                lr=self.server_lr,
+                betas=self.optimizer_betas,
+                weight_decay=self.weight_decay,
+            )
+            for model in self.server_models
+        ]
+        self.finetune_criterion = finetune_criterion or BinaryFocalWithLogitsLoss()
 
     def _payload_for_server(self, smashed: SmashedData) -> SmashedData:
         return smashed.to(self.device).detach_for_server(requires_grad=True)
@@ -83,7 +139,7 @@ class Paper2601SplitServerPool:
         logits = out["logits"]
         target = labels_for_bce(labels.to(self.device), logits.shape[-1])
         loss = self.finetune_criterion(logits, target)
-        score = multilabel_accuracy(logits.detach(), target.detach())
+        score = macro_f1_score(logits.detach(), target.detach())
         loss.backward()
         grad = payload.tokens.grad.detach().clone().to(smashed.tokens.device)
         opt.step()
@@ -95,7 +151,12 @@ class Paper2601SplitServerPool:
             model.load_state_dict(averaged)
         for idx, model in enumerate(self.server_models):
             lr = self.server_opts[idx].param_groups[0]["lr"]
-            self.server_opts[idx] = torch.optim.Adam(model.parameters(), lr=lr)
+            self.server_opts[idx] = torch.optim.AdamW(
+                model.parameters(),
+                lr=lr,
+                betas=self.optimizer_betas,
+                weight_decay=self.weight_decay,
+            )
 
     def global_model(self) -> Paper2601SplitMAEServer:
         return copy.deepcopy(self.server_models[0])
@@ -110,10 +171,17 @@ def train_stage1_client_partition(
     client_lr: float,
     server_pool: Paper2601SplitServerPool,
     device: torch.device | str,
+    optimizer_betas: tuple[float, float] = PAPER_ADAMW_BETAS,
+    weight_decay: float = PAPER_WEIGHT_DECAY,
 ) -> tuple[dict, list[SplitStepStats]]:
     device = torch.device(device)
     client_model.to(device).train()
-    opt = torch.optim.Adam(client_model.parameters(), lr=float(client_lr))
+    opt = torch.optim.AdamW(
+        client_model.parameters(),
+        lr=float(client_lr),
+        betas=(float(optimizer_betas[0]), float(optimizer_betas[1])),
+        weight_decay=float(weight_decay),
+    )
     stats: list[SplitStepStats] = []
     for _ in range(int(n_local_epochs)):
         for batch in train_loader:
@@ -137,10 +205,17 @@ def train_stage2_client_partition(
     client_lr: float,
     server_pool: Paper2601SplitServerPool,
     device: torch.device | str,
+    optimizer_betas: tuple[float, float] = PAPER_ADAMW_BETAS,
+    weight_decay: float = PAPER_WEIGHT_DECAY,
 ) -> tuple[dict, list[SplitStepStats]]:
     device = torch.device(device)
     client_model.to(device).train()
-    opt = torch.optim.Adam(client_model.parameters(), lr=float(client_lr))
+    opt = torch.optim.AdamW(
+        client_model.parameters(),
+        lr=float(client_lr),
+        betas=(float(optimizer_betas[0]), float(optimizer_betas[1])),
+        weight_decay=float(weight_decay),
+    )
     stats: list[SplitStepStats] = []
     for _ in range(int(n_local_epochs)):
         for batch in train_loader:
@@ -176,6 +251,8 @@ def run_stage1_splitfed_round(
     client_lr: float,
     device: torch.device | str,
     average_servers: bool = True,
+    optimizer_betas: tuple[float, float] = PAPER_ADAMW_BETAS,
+    weight_decay: float = PAPER_WEIGHT_DECAY,
 ) -> list[SplitStepStats]:
     client_sds: list[dict] = []
     partition_stats: list[SplitStepStats] = []
@@ -189,6 +266,8 @@ def run_stage1_splitfed_round(
             client_lr=client_lr,
             server_pool=server_pool,
             device=device,
+            optimizer_betas=optimizer_betas,
+            weight_decay=weight_decay,
         )
         client_sds.append(client_sd)
         partition_stats.append(_mean_stats(stats))
@@ -207,6 +286,8 @@ def run_stage2_splitfed_round(
     client_lr: float,
     device: torch.device | str,
     average_servers: bool = True,
+    optimizer_betas: tuple[float, float] = PAPER_ADAMW_BETAS,
+    weight_decay: float = PAPER_WEIGHT_DECAY,
 ) -> list[SplitStepStats]:
     client_sds: list[dict] = []
     partition_stats: list[SplitStepStats] = []
@@ -220,6 +301,8 @@ def run_stage2_splitfed_round(
             client_lr=client_lr,
             server_pool=server_pool,
             device=device,
+            optimizer_betas=optimizer_betas,
+            weight_decay=weight_decay,
         )
         client_sds.append(client_sd)
         partition_stats.append(_mean_stats(stats))
@@ -236,11 +319,12 @@ def evaluate_stage2(
     server: Paper2601SplitMAEServer,
     loader: DataLoader,
     device: torch.device | str,
+    criterion: Optional[nn.Module] = None,
 ) -> SplitStepStats:
     device = torch.device(device)
     client.to(device).eval()
     server.to(device).eval()
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = criterion or BinaryFocalWithLogitsLoss()
     total_loss = 0.0
     total_score = 0.0
     total_items = 0
@@ -254,7 +338,7 @@ def evaluate_stage2(
         target = labels_for_bce(yb, logits.shape[-1])
         batch_n = int(xb.shape[0])
         total_loss += float(criterion(logits, target).item()) * batch_n
-        total_score += multilabel_accuracy(logits, target) * batch_n
+        total_score += macro_f1_score(logits, target) * batch_n
         total_items += batch_n
     denom = max(total_items, 1)
     return SplitStepStats(loss=total_loss / denom, score=total_score / denom)

@@ -118,8 +118,8 @@ attention = out["attention"]
 audio_features = out["audio_features"]
 ```
 
-The classifier returns logits. Use `BCEWithLogitsLoss` for binary or
-multi-label targets.
+The classifier returns logits. Stage 2 uses focal loss and reports Macro F1,
+matching the paper's downstream evaluation setup.
 
 ## SmashedData Contract
 
@@ -155,7 +155,7 @@ from paper2601_splitmae_training import (
 server_pool = Paper2601SplitServerPool(
     server_template=server,
     n_partitions=5,
-    server_lr=5e-5,
+    server_lr=1.5e-4,
     device=device,
 )
 
@@ -163,8 +163,8 @@ stage1_stats = run_stage1_splitfed_round(
     client_base=client,
     server_pool=server_pool,
     train_loaders=train_loaders,
-    n_local_epochs=5,
-    client_lr=5e-5,
+    n_local_epochs=1,
+    client_lr=1.5e-4,
     device=device,
 )
 
@@ -172,8 +172,8 @@ stage2_stats = run_stage2_splitfed_round(
     client_base=client,
     server_pool=server_pool,
     train_loaders=train_loaders,
-    n_local_epochs=5,
-    client_lr=5e-5,
+    n_local_epochs=1,
+    client_lr=1.5e-4,
     device=device,
 )
 ```
@@ -241,7 +241,8 @@ uv run --no-sync python paper2601_splitmae_cli.py inspect \
   --static-feature-dim 131
 ```
 
-4. Run a very small Stage 1 MAE pass on the real loaders:
+4. Optional quick sanity pass on the real loaders. This is intentionally tiny
+   and is not paper metadata:
 
 ```bash
 uv run --no-sync python paper2601_splitmae_cli.py train-stage1 \
@@ -257,7 +258,11 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage1 \
   --run-name debug_stage1_a
 ```
 
-5. Run a matching Stage 2 classifier pass, loading the Stage 1 weights:
+Stage 1 logs `ma_error` only. It is a self-supervised reconstruction stage, so
+there is no classification accuracy or score at this point.
+
+5. Optional quick Stage 2 sanity pass, loading the quick Stage 1 weights. This
+   is also not paper metadata:
 
 ```bash
 uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
@@ -276,7 +281,9 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
   --run-name debug_stage2_a
 ```
 
-6. Move to a runbook-compatible AST setup after the debug commands pass:
+6. Paper-aligned Stage 1 run. The paper pre-trains Stage 1 for 120 epochs, so
+   the split implementation uses 120 global rounds with one local epoch per
+   round:
 
 ```bash
 uv run --no-sync python paper2601_splitmae_cli.py train-stage1 \
@@ -286,13 +293,13 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage1 \
   --input-tdim 259 \
   --n-client-blocks 2 \
   --n-partitions 5 \
-  --batch-size 16 \
-  --n-global-rounds 10 \
-  --n-local-epochs 5 \
+  --n-global-rounds 120 \
+  --n-local-epochs 1 \
   --run-name ast_stage1_a
 ```
 
-7. Fine-tune from that Stage 1 checkpoint:
+7. Stage 2 fine-tuning from the Stage 1 checkpoint. The paper uses focal loss,
+   Macro F1, and early stopping with patience 10; the CLI defaults follow that:
 
 ```bash
 uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
@@ -302,19 +309,23 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
   --input-tdim 259 \
   --n-client-blocks 2 \
   --n-partitions 5 \
-  --batch-size 16 \
-  --n-global-rounds 20 \
-  --n-local-epochs 5 \
+  --n-global-rounds 250 \
+  --n-local-epochs 1 \
+  --early-stopping-patience 10 \
   --num-labels 1 \
   --load-client paper2601_splitmae_runs/ast_stage1_a_client.pt \
   --load-server paper2601_splitmae_runs/ast_stage1_a_server.pt \
   --run-name ast_stage2_a
 ```
 
-For the current binary dysphonia labels, keep `--num-labels 1`, which uses
-`BCEWithLogitsLoss` internally. If a true multi-label target matrix is
-introduced later, set `--num-labels` to the label count and make the loader emit
-labels shaped `(B, num_labels)`.
+For the current binary dysphonia labels, keep `--num-labels 1`. If a true
+multi-label target matrix is introduced later, set `--num-labels` to the label
+count and make the loader emit labels shaped `(B, num_labels)`.
+
+The original downstream protocol uses 5-fold cross-validation and reports
+results over 10 fine-tuning seeds. The current isolated CLI runs one train/val
+split from the existing project loaders; use an external shell loop or a later
+integration wrapper to reproduce the full 5-fold / 10-seed protocol.
 
 The commands above use the default data paths from the project runbook. Override
 them with `--pickle-dir`, or with both `--pickle-dir-eent` and
@@ -348,12 +359,16 @@ creating a formal package namespace.
   `audioset_checkpoint_path=...`.
 - Stage 1 uses patch-wise normalized reconstruction targets and an L1-style
   masked absolute error.
+- Stage 1 defaults to 120 global rounds and one local epoch per round to match
+  the paper's 120 pre-training epochs.
+- Training defaults use AdamW with betas `(0.9, 0.95)` and weight decay `0.05`.
 - Content-aware masking follows the paper's high-variance candidate-pool rule:
   select the top `max(70% * N_mask, 50% * N_total)` patches by variance, sample
   70% of masked patches from that group, and sample the rest from remaining
   patches.
 - The lightweight MAE decoder defaults to `decoder_embed_dim=256`,
-  `decoder_depth=4`, and `decoder_num_heads=4`.
+  `decoder_depth=4`, and `decoder_num_heads=8`.
+- Stage 2 uses focal loss, Macro F1, and early stopping patience 10 by default.
 - The server classifier supports the paper-style static feature branch through
   `static_feature_dim`, but current repository loaders do not yet emit static
   features.

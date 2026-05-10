@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Optional
+
+
+PAPER_ADAMW_BETAS = (0.9, 0.95)
+PAPER_WEIGHT_DECAY = 0.05
+PAPER_FOCAL_GAMMA = 2.0
+PAPER_STAGE1_EPOCHS = 120
+PROJECT_STAGE2_MAX_ROUNDS = 250
+PAPER_STAGE2_EARLY_STOPPING_PATIENCE = 10
 
 
 def _positive_int(value: str) -> int:
@@ -25,7 +34,7 @@ def _add_data_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--train-val-seed", type=int, default=100)
     p.add_argument("--partition-seed", type=int, default=42)
     p.add_argument("--n-partitions", type=_positive_int, default=5)
-    p.add_argument("--batch-size", type=_positive_int, default=16)
+    p.add_argument("--batch-size", type=_positive_int, default=256)
 
 
 def _add_model_args(p: argparse.ArgumentParser) -> None:
@@ -44,11 +53,26 @@ def _add_model_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--device", type=str, default=None)
 
 
-def _add_train_args(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--n-global-rounds", type=_positive_int, default=1)
-    p.add_argument("--n-local-epochs", type=_positive_int, default=1)
-    p.add_argument("--client-lr", type=float, default=5e-5)
-    p.add_argument("--server-lr", type=float, default=5e-5)
+def _add_train_args(
+    p: argparse.ArgumentParser,
+    *,
+    default_rounds: int,
+    default_local_epochs: int = 1,
+    include_early_stopping: bool = False,
+    include_focal: bool = False,
+) -> None:
+    p.add_argument("--n-global-rounds", type=_positive_int, default=int(default_rounds))
+    p.add_argument("--n-local-epochs", type=_positive_int, default=int(default_local_epochs))
+    p.add_argument("--client-lr", type=float, default=1.5e-4)
+    p.add_argument("--server-lr", type=float, default=1.5e-4)
+    p.add_argument("--adamw-beta1", type=float, default=PAPER_ADAMW_BETAS[0])
+    p.add_argument("--adamw-beta2", type=float, default=PAPER_ADAMW_BETAS[1])
+    p.add_argument("--weight-decay", type=float, default=PAPER_WEIGHT_DECAY)
+    if include_focal:
+        p.add_argument("--focal-gamma", type=float, default=PAPER_FOCAL_GAMMA)
+        p.add_argument("--focal-alpha", type=float, default=None)
+    if include_early_stopping:
+        p.add_argument("--early-stopping-patience", type=int, default=PAPER_STAGE2_EARLY_STOPPING_PATIENCE)
     p.add_argument("--save-dir", type=Path, default=Path("paper2601_splitmae_runs"))
     p.add_argument("--run-name", type=str, default=None)
     p.add_argument("--load-client", type=Path, default=None)
@@ -167,6 +191,21 @@ def _save_pair(args: argparse.Namespace, client, server, stage: str) -> dict[str
         "n_client_blocks": int(args.n_client_blocks),
         "num_labels": int(args.num_labels),
         "static_feature_dim": int(args.static_feature_dim),
+        "mask_ratio": float(args.mask_ratio),
+        "mask_strategy": str(args.mask_strategy),
+        "optimizer": "AdamW",
+        "adamw_betas": [float(args.adamw_beta1), float(args.adamw_beta2)],
+        "weight_decay": float(args.weight_decay),
+        "client_lr": float(args.client_lr),
+        "server_lr": float(args.server_lr),
+        "n_global_rounds": int(args.n_global_rounds),
+        "n_local_epochs": int(args.n_local_epochs),
+        "stage1_reference_epochs": PAPER_STAGE1_EPOCHS if stage == "stage1" else None,
+        "stage2_loss": "BinaryFocalWithLogitsLoss" if stage == "stage2" else None,
+        "stage2_focal_gamma": getattr(args, "focal_gamma", None),
+        "stage2_focal_alpha": getattr(args, "focal_alpha", None),
+        "stage2_primary_metric": "macro_f1" if stage == "stage2" else None,
+        "stage2_early_stopping_patience": getattr(args, "early_stopping_patience", None),
         "client_file": str(client_path),
         "server_file": str(server_path),
     }
@@ -212,11 +251,14 @@ def cmd_train_stage1(args: argparse.Namespace) -> None:
 
     pack = _build_loaders(args)
     client, server, device = _build_pair(args)
+    optimizer_betas = (float(args.adamw_beta1), float(args.adamw_beta2))
     server_pool = Paper2601SplitServerPool(
         server_template=server,
         n_partitions=int(args.n_partitions),
         server_lr=float(args.server_lr),
         device=device,
+        optimizer_betas=optimizer_betas,
+        weight_decay=float(args.weight_decay),
     )
     history = []
     for round_idx in range(int(args.n_global_rounds)):
@@ -227,8 +269,10 @@ def cmd_train_stage1(args: argparse.Namespace) -> None:
             n_local_epochs=int(args.n_local_epochs),
             client_lr=float(args.client_lr),
             device=device,
+            optimizer_betas=optimizer_betas,
+            weight_decay=float(args.weight_decay),
         )
-        round_stats = [{"loss": s.loss, "score": s.score} for s in stats]
+        round_stats = [{"ma_error": s.loss} for s in stats]
         history.append(round_stats)
         print(json.dumps({"round": round_idx, "partition_stats": round_stats}))
     saved = _save_pair(args, client, server_pool.global_model(), "stage1")
@@ -236,17 +280,33 @@ def cmd_train_stage1(args: argparse.Namespace) -> None:
 
 
 def cmd_train_stage2(args: argparse.Namespace) -> None:
-    from paper2601_splitmae_training import Paper2601SplitServerPool, evaluate_stage2, run_stage2_splitfed_round
+    from paper2601_splitmae_training import (
+        BinaryFocalWithLogitsLoss,
+        Paper2601SplitServerPool,
+        evaluate_stage2,
+        run_stage2_splitfed_round,
+    )
 
     pack = _build_loaders(args)
     client, server, device = _build_pair(args)
+    optimizer_betas = (float(args.adamw_beta1), float(args.adamw_beta2))
     server_pool = Paper2601SplitServerPool(
         server_template=server,
         n_partitions=int(args.n_partitions),
         server_lr=float(args.server_lr),
         device=device,
+        finetune_criterion=BinaryFocalWithLogitsLoss(gamma=float(args.focal_gamma), alpha=args.focal_alpha),
+        optimizer_betas=optimizer_betas,
+        weight_decay=float(args.weight_decay),
     )
+    val_criterion = BinaryFocalWithLogitsLoss(gamma=float(args.focal_gamma), alpha=args.focal_alpha)
     history = []
+    patience = int(args.early_stopping_patience)
+    patience_left = patience
+    best_score = float("-inf")
+    best_client_sd = copy.deepcopy(client.state_dict())
+    best_server_sd = copy.deepcopy(server_pool.global_model().state_dict())
+    best_round = -1
     for round_idx in range(int(args.n_global_rounds)):
         stats = run_stage2_splitfed_round(
             client_base=client,
@@ -255,18 +315,46 @@ def cmd_train_stage2(args: argparse.Namespace) -> None:
             n_local_epochs=int(args.n_local_epochs),
             client_lr=float(args.client_lr),
             device=device,
+            optimizer_betas=optimizer_betas,
+            weight_decay=float(args.weight_decay),
         )
         val = evaluate_stage2(
             client=client,
             server=server_pool.global_model(),
             loader=pack.val_loader,
             device=device,
+            criterion=val_criterion,
         )
-        round_stats = [{"loss": s.loss, "score": s.score} for s in stats]
-        history.append({"train": round_stats, "val": {"loss": val.loss, "score": val.score}})
-        print(json.dumps({"round": round_idx, "partition_stats": round_stats, "val_loss": val.loss, "val_score": val.score}))
-    saved = _save_pair(args, client, server_pool.global_model(), "stage2")
-    print(json.dumps({"saved": saved, "history": history}, indent=2))
+        round_stats = [{"loss": s.loss, "macro_f1": s.score} for s in stats]
+        history.append({"train": round_stats, "val": {"loss": val.loss, "macro_f1": val.score}})
+        print(
+            json.dumps(
+                {
+                    "round": round_idx,
+                    "partition_stats": round_stats,
+                    "val_loss": val.loss,
+                    "val_macro_f1": val.score,
+                    "patience_left": patience_left if patience > 0 else "off",
+                }
+            )
+        )
+        if val.score > best_score + 1e-12:
+            best_score = float(val.score)
+            best_round = int(round_idx)
+            best_client_sd = copy.deepcopy(client.state_dict())
+            best_server_sd = copy.deepcopy(server_pool.global_model().state_dict())
+            if patience > 0:
+                patience_left = patience
+        elif patience > 0:
+            patience_left -= 1
+            if patience_left <= 0:
+                print(json.dumps({"early_stop": True, "best_round": best_round, "best_val_macro_f1": best_score}))
+                break
+    client.load_state_dict(best_client_sd)
+    best_server = server_pool.global_model()
+    best_server.load_state_dict(best_server_sd)
+    saved = _save_pair(args, client, best_server, "stage2")
+    print(json.dumps({"saved": saved, "history": history, "best_round": best_round, "best_val_macro_f1": best_score}, indent=2))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -283,13 +371,19 @@ def build_parser() -> argparse.ArgumentParser:
     stage1_p = sub.add_parser("train-stage1", help="Run Stage 1 domain-adaptive MAE split training.")
     _add_data_args(stage1_p)
     _add_model_args(stage1_p)
-    _add_train_args(stage1_p)
+    _add_train_args(stage1_p, default_rounds=PAPER_STAGE1_EPOCHS, default_local_epochs=1)
     stage1_p.set_defaults(func=cmd_train_stage1)
 
     stage2_p = sub.add_parser("train-stage2", help="Run Stage 2 Attention-FFNN split fine-tuning.")
     _add_data_args(stage2_p)
     _add_model_args(stage2_p)
-    _add_train_args(stage2_p)
+    _add_train_args(
+        stage2_p,
+        default_rounds=PROJECT_STAGE2_MAX_ROUNDS,
+        default_local_epochs=1,
+        include_early_stopping=True,
+        include_focal=True,
+    )
     stage2_p.set_defaults(func=cmd_train_stage2)
     return p
 
