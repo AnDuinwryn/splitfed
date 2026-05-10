@@ -318,6 +318,60 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
   --run-name ast_stage2_a
 ```
 
+8. Repeat the same paper-aligned run for vowel `/i/`:
+
+```bash
+uv run --no-sync python paper2601_splitmae_cli.py train-stage1 \
+  --vowel i \
+  --model-size base384 \
+  --input-fdim 128 \
+  --input-tdim 259 \
+  --n-client-blocks 2 \
+  --n-partitions 5 \
+  --n-global-rounds 120 \
+  --n-local-epochs 1 \
+  --run-name ast_stage1_i
+```
+
+```bash
+uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
+  --vowel i \
+  --model-size base384 \
+  --input-fdim 128 \
+  --input-tdim 259 \
+  --n-client-blocks 2 \
+  --n-partitions 5 \
+  --n-global-rounds 250 \
+  --n-local-epochs 1 \
+  --early-stopping-patience 10 \
+  --num-labels 1 \
+  --load-client paper2601_splitmae_runs/ast_stage1_i_client.pt \
+  --load-server paper2601_splitmae_runs/ast_stage1_i_server.pt \
+  --run-name ast_stage2_i
+```
+
+9. Final evaluation on held-out test data. The command loads the saved best
+   Stage 2 weights and evaluates both EENT Chinese test and SVD/German test by
+   default:
+
+```bash
+uv run --no-sync python paper2601_splitmae_cli.py evaluate-stage2 \
+  --metadata paper2601_splitmae_runs/ast_stage2_a_metadata.json \
+  --eval-dataset both \
+  --results-json paper2601_splitmae_runs/ast_stage2_a_eval.json
+```
+
+```bash
+uv run --no-sync python paper2601_splitmae_cli.py evaluate-stage2 \
+  --metadata paper2601_splitmae_runs/ast_stage2_i_metadata.json \
+  --eval-dataset both \
+  --results-json paper2601_splitmae_runs/ast_stage2_i_eval.json
+```
+
+The evaluation output includes segment-level `segment_loss` and
+`segment_macro_f1`, plus patient-level metrics for the current binary
+`--num-labels 1` setup.
+
 For the current binary dysphonia labels, keep `--num-labels 1`. If a true
 multi-label target matrix is introduced later, set `--num-labels` to the label
 count and make the loader emit labels shaped `(B, num_labels)`.
@@ -369,6 +423,8 @@ creating a formal package namespace.
 - The lightweight MAE decoder defaults to `decoder_embed_dim=256`,
   `decoder_depth=4`, and `decoder_num_heads=8`.
 - Stage 2 uses focal loss, Macro F1, and early stopping patience 10 by default.
+- `evaluate-stage2` loads the saved best Stage 2 weights and reports final
+  EENT/SVD test metrics for one vowel at a time.
 - The server classifier supports the paper-style static feature branch through
   `static_feature_dim`, but current repository loaders do not yet emit static
   features.

@@ -79,10 +79,43 @@ def _add_train_args(
     p.add_argument("--load-server", type=Path, default=None)
 
 
+def _add_eval_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--metadata", type=Path, default=None, help="Stage 2 metadata JSON; fills model args and checkpoints.")
+    p.add_argument("--load-client", type=Path, default=None)
+    p.add_argument("--load-server", type=Path, default=None)
+    p.add_argument("--eval-dataset", choices=["chinese", "german", "both"], default="both")
+    p.add_argument(
+        "--patient-eval-strategy",
+        choices=["fixed", "best_threshold", "relative", "percentage", "max recall", "guding"],
+        default="fixed",
+    )
+    p.add_argument("--patient-prob-threshold", type=float, default=0.5)
+    p.add_argument("--focal-gamma", type=float, default=PAPER_FOCAL_GAMMA)
+    p.add_argument("--results-json", type=Path, default=None)
+    p.add_argument("--verbose", action="store_true")
+
+
 def _load_torch():
     import torch
 
     return torch
+
+
+def _json_ready(value):
+    try:
+        import numpy as np
+    except Exception:
+        np = None
+    if isinstance(value, dict):
+        return {str(k): _json_ready(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_ready(v) for v in value]
+    if np is not None:
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, np.generic):
+            return value.item()
+    return value
 
 
 def _make_context(args: argparse.Namespace) -> Any:
@@ -185,10 +218,15 @@ def _save_pair(args: argparse.Namespace, client, server, stage: str) -> dict[str
     metadata = {
         "stage": stage,
         "vowel": args.vowel,
+        "dev_test_seed": int(args.dev_test_seed),
+        "train_val_seed": int(args.train_val_seed),
+        "partition_seed": int(args.partition_seed),
+        "model_init_seed": int(args.model_init_seed),
         "model_size": args.model_size,
         "input_fdim": int(args.input_fdim),
         "input_tdim": int(args.input_tdim),
         "n_client_blocks": int(args.n_client_blocks),
+        "batch_size": int(args.batch_size),
         "num_labels": int(args.num_labels),
         "static_feature_dim": int(args.static_feature_dim),
         "mask_ratio": float(args.mask_ratio),
@@ -212,6 +250,48 @@ def _save_pair(args: argparse.Namespace, client, server, stage: str) -> dict[str
     meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     return {"client": str(client_path), "server": str(server_path), "metadata": str(meta_path)}
 
+
+def _apply_metadata_to_args(args: argparse.Namespace) -> dict:
+    if args.metadata is None:
+        return {}
+    meta = json.loads(args.metadata.read_text(encoding="utf-8"))
+    mapping = {
+        "vowel": "vowel",
+        "dev_test_seed": "dev_test_seed",
+        "train_val_seed": "train_val_seed",
+        "partition_seed": "partition_seed",
+        "model_init_seed": "model_init_seed",
+        "model_size": "model_size",
+        "input_fdim": "input_fdim",
+        "input_tdim": "input_tdim",
+        "n_client_blocks": "n_client_blocks",
+        "batch_size": "batch_size",
+        "num_labels": "num_labels",
+        "static_feature_dim": "static_feature_dim",
+        "mask_ratio": "mask_ratio",
+        "mask_strategy": "mask_strategy",
+        "stage2_focal_gamma": "focal_gamma",
+    }
+    for meta_key, arg_name in mapping.items():
+        if meta.get(meta_key) is not None and hasattr(args, arg_name):
+            setattr(args, arg_name, meta[meta_key])
+    if args.load_client is None and meta.get("client_file"):
+        args.load_client = Path(meta["client_file"])
+    if args.load_server is None and meta.get("server_file"):
+        args.load_server = Path(meta["server_file"])
+    return meta
+
+
+def _eval_arrays_for_dataset(bundle, vowel: str, dataset_name: str):
+    if dataset_name == "chinese":
+        if vowel == "a":
+            return bundle.x_test_a, bundle.y_test_a, bundle.id_test_a, "Chinese-Test"
+        return bundle.x_test_i, bundle.y_test_i, bundle.id_test_i, "Chinese-Test"
+    if dataset_name == "german":
+        if vowel == "a":
+            return bundle.x_ger_a, bundle.y_ger_a, bundle.id_ger_a, "German-Test"
+        return bundle.x_ger_i, bundle.y_ger_i, bundle.id_ger_i, "German-Test"
+    raise ValueError(f"Unknown eval dataset: {dataset_name}")
 
 def cmd_inspect(args: argparse.Namespace) -> None:
     torch = _load_torch()
@@ -357,6 +437,101 @@ def cmd_train_stage2(args: argparse.Namespace) -> None:
     print(json.dumps({"saved": saved, "history": history, "best_round": best_round, "best_val_macro_f1": best_score}, indent=2))
 
 
+def _predict_stage2_positive_probs(client, server, loader, device):
+    torch = _load_torch()
+    probs = []
+    client.eval()
+    server.eval()
+    with torch.no_grad():
+        for batch in loader:
+            xb = batch[0].to(device)
+            smashed = client(xb, mode="finetune").to(device)
+            logits = server.forward_finetune(smashed)["logits"]
+            sigmoid = torch.sigmoid(logits)
+            if sigmoid.shape[-1] != 1:
+                raise ValueError("Patient-level final evaluation currently expects --num-labels 1.")
+            probs.append(sigmoid[:, 0].detach().cpu())
+    return torch.cat(probs, dim=0).numpy()
+
+
+def cmd_evaluate_stage2(args: argparse.Namespace) -> None:
+    torch = _load_torch()
+    from torch.utils.data import DataLoader
+
+    from paper2601_splitmae_training import BinaryFocalWithLogitsLoss, evaluate_stage2
+    from voice_disorder_torch.data.datasets import SsastMelDataset
+    from voice_disorder_torch.data.load import load_all_preprocessed
+    from voice_disorder_torch.evaluation.patient_eval import model_eval_by_id
+
+    metadata = _apply_metadata_to_args(args)
+    if args.load_client is None or args.load_server is None:
+        raise SystemExit("evaluate-stage2 requires --metadata or both --load-client and --load-server.")
+
+    ctx = _make_context(args)
+    bundle = load_all_preprocessed(ctx.paths, ctx.splits, verbose=True)
+    client, server, device = _build_pair(args)
+    criterion = BinaryFocalWithLogitsLoss(gamma=float(getattr(args, "focal_gamma", PAPER_FOCAL_GAMMA)))
+
+    selected = ["chinese", "german"] if args.eval_dataset == "both" else [args.eval_dataset]
+    results = {
+        "stage": "evaluate-stage2",
+        "vowel": args.vowel,
+        "metadata_file": str(args.metadata) if args.metadata is not None else None,
+        "client_file": str(args.load_client),
+        "server_file": str(args.load_server),
+        "dev_test_seed": int(args.dev_test_seed),
+        "train_val_seed": int(args.train_val_seed),
+        "model": {
+            "model_size": args.model_size,
+            "input_fdim": int(args.input_fdim),
+            "input_tdim": int(args.input_tdim),
+            "n_client_blocks": int(args.n_client_blocks),
+            "num_labels": int(args.num_labels),
+        },
+        "loaded_metadata": metadata,
+        "datasets": {},
+    }
+
+    for dataset_name in selected:
+        x, y, ids, display_name = _eval_arrays_for_dataset(bundle, args.vowel, dataset_name)
+        ds = SsastMelDataset(x, y, input_tdim=int(args.input_tdim))
+        loader = DataLoader(ds, batch_size=int(args.batch_size), shuffle=False, num_workers=0)
+        segment = evaluate_stage2(
+            client=client,
+            server=server,
+            loader=loader,
+            device=device,
+            criterion=criterion,
+        )
+        block = {
+            "segment_loss": float(segment.loss),
+            "segment_macro_f1": float(segment.score),
+            "n_segments": int(len(ds)),
+            "n_patients": int(len(set(str(pid) for pid in ids))),
+        }
+        if int(args.num_labels) == 1:
+            pos_probs = _predict_stage2_positive_probs(client, server, loader, device)
+            block["patient"] = model_eval_by_id(
+                x,
+                y,
+                list(ids),
+                pos_probs,
+                vowel_type=args.vowel,
+                dataset_type=display_name,
+                strategy=args.patient_eval_strategy,
+                patient_prob_threshold=float(args.patient_prob_threshold),
+                verbose=bool(args.verbose),
+            )
+        results["datasets"][dataset_name] = block
+
+    results = _json_ready(results)
+    text = json.dumps(results, indent=2, sort_keys=True)
+    if args.results_json is not None:
+        args.results_json.parent.mkdir(parents=True, exist_ok=True)
+        args.results_json.write_text(text + "\n", encoding="utf-8")
+    print(text)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Isolated CLI for the Paper 2601 Split-MAE experiment.")
     sub = p.add_subparsers(dest="command", required=True)
@@ -385,6 +560,12 @@ def build_parser() -> argparse.ArgumentParser:
         include_focal=True,
     )
     stage2_p.set_defaults(func=cmd_train_stage2)
+
+    eval_p = sub.add_parser("evaluate-stage2", help="Evaluate a saved Stage 2 model on final test datasets.")
+    _add_data_args(eval_p)
+    _add_model_args(eval_p)
+    _add_eval_args(eval_p)
+    eval_p.set_defaults(func=cmd_evaluate_stage2)
     return p
 
 
