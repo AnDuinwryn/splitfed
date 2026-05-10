@@ -90,7 +90,12 @@ def _add_pair_eval_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--patient-prob-threshold", type=float, default=0.5)
     p.add_argument("--focal-gamma", type=float, default=PAPER_FOCAL_GAMMA)
-    p.add_argument("--results-json", type=Path, default=None)
+    p.add_argument(
+        "--results-json",
+        type=Path,
+        default=None,
+        help="Write the full evaluation JSON. Default: metadata-a directory / ast_stage2_ai_eval.json.",
+    )
     p.add_argument("--verbose", action="store_true")
 
 
@@ -532,10 +537,26 @@ def _stage2_eval_loader(x, y, input_tdim: int, batch_size: int):
     return ds, DataLoader(ds, batch_size=int(batch_size), shuffle=False, num_workers=0)
 
 
+def _default_pair_results_json(args: argparse.Namespace) -> Path:
+    return Path(args.metadata_a).parent / "ast_stage2_ai_eval.json"
+
+
+def _printable_pair_eval(results: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "patient_eval_strategy": results.get("patient_eval_strategy"),
+        "patient_prob_threshold": results.get("patient_prob_threshold"),
+    }
+    for key, value in results.get("datasets", {}).items():
+        out[key] = value
+    return out
+
+
 def cmd_evaluate_stage2_pair(args: argparse.Namespace) -> None:
     from paper2601_splitmae_training import BinaryFocalWithLogitsLoss, evaluate_stage2
     from voice_disorder_torch.data.load import load_all_preprocessed
     from voice_disorder_torch.evaluation.patient_eval import combined_vowel_ai_eval, model_eval_by_id
+    from voice_disorder_torch.io.eval_report import save_eval_json
+    from voice_disorder_torch.ui.eval_cli import print_eval
 
     args_a, meta_a = _args_from_metadata(args, args.metadata_a)
     args_i, meta_i = _args_from_metadata(args, args.metadata_i)
@@ -646,11 +667,10 @@ def cmd_evaluate_stage2_pair(args: argparse.Namespace) -> None:
         }
 
     results = _json_ready(results)
-    text = json.dumps(results, indent=2, sort_keys=True)
-    if args.results_json is not None:
-        args.results_json.parent.mkdir(parents=True, exist_ok=True)
-        args.results_json.write_text(text + "\n", encoding="utf-8")
-    print(text)
+    print_eval(_printable_pair_eval(results), verbose=bool(args.verbose))
+    results_json = Path(args.results_json) if args.results_json is not None else _default_pair_results_json(args)
+    save_eval_json(results_json, results)
+    print(f"Wrote evaluation JSON: {results_json.resolve()}")
 
 
 def build_parser() -> argparse.ArgumentParser:

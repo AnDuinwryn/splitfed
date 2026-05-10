@@ -376,12 +376,18 @@ uv run --no-sync python paper2601_splitmae_cli.py evaluate-stage2-pair \
   --results-json paper2601_splitmae_runs/ast_stage2_ai_eval.json
 ```
 
-The evaluation output includes segment-level metrics for each vowel plus
-patient-level `single_a`, `single_i`, and `combined` metrics. The combined
-block is the closest match to the existing project pipeline's final `/a+i/`
-patient-level evaluation.
+The terminal output uses the existing project evaluation display
+(`voice_disorder_torch.ui.eval_cli.print_eval`): EENT/SVD panels, `/a/+/i/`
+metrics, classification-report rows, and confusion matrix. The full structured
+JSON is always saved. If `--results-json` is omitted, it defaults to
+`metadata-a`'s directory plus `ast_stage2_ai_eval.json`. The JSON includes
+segment-level metrics for each vowel plus patient-level `single_a`, `single_i`,
+and `combined` metrics. The combined block is the closest match to the existing
+project pipeline's final `/a+i/` patient-level evaluation.
 
-10. To run the whole sequence in order, use the provided shell script:
+10. Full pipeline bash script. This runs the same CLI sequence above in order:
+    `/a/` Stage 1, `/a/` Stage 2, `/i/` Stage 1, `/i/` Stage 2, then paired
+    `/a+i/` evaluation.
 
 ```bash
 bash paper2601_run_full_pipeline.sh
