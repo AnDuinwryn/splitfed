@@ -79,10 +79,9 @@ def _add_train_args(
     p.add_argument("--load-server", type=Path, default=None)
 
 
-def _add_eval_args(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--metadata", type=Path, default=None, help="Stage 2 metadata JSON; fills model args and checkpoints.")
-    p.add_argument("--load-client", type=Path, default=None)
-    p.add_argument("--load-server", type=Path, default=None)
+def _add_pair_eval_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--metadata-a", type=Path, required=True, help="Stage 2 metadata JSON for vowel /a/.")
+    p.add_argument("--metadata-i", type=Path, required=True, help="Stage 2 metadata JSON for vowel /i/.")
     p.add_argument("--eval-dataset", choices=["chinese", "german", "both"], default="both")
     p.add_argument(
         "--patient-eval-strategy",
@@ -140,7 +139,7 @@ def _make_context(args: argparse.Namespace) -> Any:
         paths=paths,
         splits=SplitSeeds(dev_test_seed=int(args.dev_test_seed), train_val_seed=int(args.train_val_seed)),
         train=train_cfg,
-        save_dir=args.save_dir,
+        save_dir=getattr(args, "save_dir", Path("paper2601_splitmae_runs")),
         device=args.device,
     )
 
@@ -280,6 +279,15 @@ def _apply_metadata_to_args(args: argparse.Namespace) -> dict:
     if args.load_server is None and meta.get("server_file"):
         args.load_server = Path(meta["server_file"])
     return meta
+
+
+def _args_from_metadata(base_args: argparse.Namespace, metadata_path: Path) -> tuple[argparse.Namespace, dict]:
+    args = copy.copy(base_args)
+    args.metadata = metadata_path
+    args.load_client = None
+    args.load_server = None
+    meta = _apply_metadata_to_args(args)
+    return args, meta
 
 
 def _eval_arrays_for_dataset(bundle, vowel: str, dataset_name: str):
@@ -454,75 +462,126 @@ def _predict_stage2_positive_probs(client, server, loader, device):
     return torch.cat(probs, dim=0).numpy()
 
 
-def cmd_evaluate_stage2(args: argparse.Namespace) -> None:
-    torch = _load_torch()
+def _stage2_eval_loader(x, y, input_tdim: int, batch_size: int):
     from torch.utils.data import DataLoader
 
-    from paper2601_splitmae_training import BinaryFocalWithLogitsLoss, evaluate_stage2
     from voice_disorder_torch.data.datasets import SsastMelDataset
+
+    ds = SsastMelDataset(x, y, input_tdim=int(input_tdim))
+    return ds, DataLoader(ds, batch_size=int(batch_size), shuffle=False, num_workers=0)
+
+
+def cmd_evaluate_stage2_pair(args: argparse.Namespace) -> None:
+    from paper2601_splitmae_training import BinaryFocalWithLogitsLoss, evaluate_stage2
     from voice_disorder_torch.data.load import load_all_preprocessed
-    from voice_disorder_torch.evaluation.patient_eval import model_eval_by_id
+    from voice_disorder_torch.evaluation.patient_eval import combined_vowel_ai_eval, model_eval_by_id
 
-    metadata = _apply_metadata_to_args(args)
-    if args.load_client is None or args.load_server is None:
-        raise SystemExit("evaluate-stage2 requires --metadata or both --load-client and --load-server.")
+    args_a, meta_a = _args_from_metadata(args, args.metadata_a)
+    args_i, meta_i = _args_from_metadata(args, args.metadata_i)
+    if args_a.vowel != "a" or args_i.vowel != "i":
+        raise SystemExit(
+            f"evaluate-stage2-pair expects metadata-a for /a/ and metadata-i for /i/, "
+            f"got {args_a.vowel!r} and {args_i.vowel!r}."
+        )
+    if args_a.dev_test_seed != args_i.dev_test_seed:
+        raise SystemExit("metadata-a and metadata-i must use the same dev_test_seed for paired evaluation.")
+    if int(args_a.num_labels) != 1 or int(args_i.num_labels) != 1:
+        raise SystemExit("evaluate-stage2-pair currently supports binary --num-labels 1 models only.")
 
-    ctx = _make_context(args)
+    ctx = _make_context(args_a)
     bundle = load_all_preprocessed(ctx.paths, ctx.splits, verbose=True)
-    client, server, device = _build_pair(args)
-    criterion = BinaryFocalWithLogitsLoss(gamma=float(getattr(args, "focal_gamma", PAPER_FOCAL_GAMMA)))
+    client_a, server_a, device = _build_pair(args_a)
+    client_i, server_i, _ = _build_pair(args_i)
+    focal_gamma_a = meta_a.get("stage2_focal_gamma")
+    focal_gamma_i = meta_i.get("stage2_focal_gamma")
+    focal_gamma = float(focal_gamma_a if focal_gamma_a is not None else args.focal_gamma)
+    if focal_gamma_i is not None and abs(float(focal_gamma_i) - focal_gamma) > 1e-12:
+        raise SystemExit("metadata-a and metadata-i use different focal gamma values.")
+    criterion = BinaryFocalWithLogitsLoss(gamma=focal_gamma)
 
     selected = ["chinese", "german"] if args.eval_dataset == "both" else [args.eval_dataset]
     results = {
-        "stage": "evaluate-stage2",
-        "vowel": args.vowel,
-        "metadata_file": str(args.metadata) if args.metadata is not None else None,
-        "client_file": str(args.load_client),
-        "server_file": str(args.load_server),
-        "dev_test_seed": int(args.dev_test_seed),
-        "train_val_seed": int(args.train_val_seed),
-        "model": {
-            "model_size": args.model_size,
-            "input_fdim": int(args.input_fdim),
-            "input_tdim": int(args.input_tdim),
-            "n_client_blocks": int(args.n_client_blocks),
-            "num_labels": int(args.num_labels),
-        },
-        "loaded_metadata": metadata,
+        "stage": "evaluate-stage2-pair",
+        "metadata_a": str(args.metadata_a),
+        "metadata_i": str(args.metadata_i),
+        "client_a_file": str(args_a.load_client),
+        "server_a_file": str(args_a.load_server),
+        "client_i_file": str(args_i.load_client),
+        "server_i_file": str(args_i.load_server),
+        "dev_test_seed": int(args_a.dev_test_seed),
+        "train_val_seed_a": int(args_a.train_val_seed),
+        "train_val_seed_i": int(args_i.train_val_seed),
+        "patient_eval_strategy": args.patient_eval_strategy,
+        "patient_prob_threshold": float(args.patient_prob_threshold),
+        "focal_gamma": focal_gamma,
+        "loaded_metadata_a": meta_a,
+        "loaded_metadata_i": meta_i,
         "datasets": {},
     }
 
     for dataset_name in selected:
-        x, y, ids, display_name = _eval_arrays_for_dataset(bundle, args.vowel, dataset_name)
-        ds = SsastMelDataset(x, y, input_tdim=int(args.input_tdim))
-        loader = DataLoader(ds, batch_size=int(args.batch_size), shuffle=False, num_workers=0)
-        segment = evaluate_stage2(
-            client=client,
-            server=server,
-            loader=loader,
-            device=device,
-            criterion=criterion,
+        xa, ya, ida, display_name = _eval_arrays_for_dataset(bundle, "a", dataset_name)
+        xi, yi, idi, _ = _eval_arrays_for_dataset(bundle, "i", dataset_name)
+        ds_a, loader_a = _stage2_eval_loader(xa, ya, int(args_a.input_tdim), int(args_a.batch_size))
+        ds_i, loader_i = _stage2_eval_loader(xi, yi, int(args_i.input_tdim), int(args_i.batch_size))
+
+        seg_a = evaluate_stage2(client=client_a, server=server_a, loader=loader_a, device=device, criterion=criterion)
+        seg_i = evaluate_stage2(client=client_i, server=server_i, loader=loader_i, device=device, criterion=criterion)
+        pa = _predict_stage2_positive_probs(client_a, server_a, loader_a, device)
+        pi = _predict_stage2_positive_probs(client_i, server_i, loader_i, device)
+
+        single_a = model_eval_by_id(
+            xa,
+            ya,
+            list(ida),
+            pa,
+            vowel_type="a",
+            dataset_type=display_name,
+            strategy=args.patient_eval_strategy,
+            patient_prob_threshold=float(args.patient_prob_threshold),
+            verbose=bool(args.verbose),
         )
-        block = {
-            "segment_loss": float(segment.loss),
-            "segment_macro_f1": float(segment.score),
-            "n_segments": int(len(ds)),
-            "n_patients": int(len(set(str(pid) for pid in ids))),
+        single_i = model_eval_by_id(
+            xi,
+            yi,
+            list(idi),
+            pi,
+            vowel_type="i",
+            dataset_type=display_name,
+            strategy=args.patient_eval_strategy,
+            patient_prob_threshold=float(args.patient_prob_threshold),
+            verbose=bool(args.verbose),
+        )
+        combined = combined_vowel_ai_eval(
+            pa,
+            pi,
+            ya,
+            yi,
+            ida,
+            idi,
+            dataset_type=display_name,
+            strategy=args.patient_eval_strategy,
+            patient_prob_threshold=float(args.patient_prob_threshold),
+            verbose=bool(args.verbose),
+        )
+
+        results["datasets"][dataset_name] = {
+            "segment_a": {
+                "segment_loss": float(seg_a.loss),
+                "segment_macro_f1": float(seg_a.score),
+                "n_segments": int(len(ds_a)),
+                "n_patients": int(len(set(str(pid) for pid in ida))),
+            },
+            "segment_i": {
+                "segment_loss": float(seg_i.loss),
+                "segment_macro_f1": float(seg_i.score),
+                "n_segments": int(len(ds_i)),
+                "n_patients": int(len(set(str(pid) for pid in idi))),
+            },
+            "single_a": single_a,
+            "single_i": single_i,
+            "combined": combined,
         }
-        if int(args.num_labels) == 1:
-            pos_probs = _predict_stage2_positive_probs(client, server, loader, device)
-            block["patient"] = model_eval_by_id(
-                x,
-                y,
-                list(ids),
-                pos_probs,
-                vowel_type=args.vowel,
-                dataset_type=display_name,
-                strategy=args.patient_eval_strategy,
-                patient_prob_threshold=float(args.patient_prob_threshold),
-                verbose=bool(args.verbose),
-            )
-        results["datasets"][dataset_name] = block
 
     results = _json_ready(results)
     text = json.dumps(results, indent=2, sort_keys=True)
@@ -561,11 +620,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     stage2_p.set_defaults(func=cmd_train_stage2)
 
-    eval_p = sub.add_parser("evaluate-stage2", help="Evaluate a saved Stage 2 model on final test datasets.")
-    _add_data_args(eval_p)
-    _add_model_args(eval_p)
-    _add_eval_args(eval_p)
-    eval_p.set_defaults(func=cmd_evaluate_stage2)
+    eval_pair_p = sub.add_parser(
+        "evaluate-stage2-pair",
+        help="Evaluate saved Stage 2 /a/ and /i/ models with combined patient-level scoring.",
+    )
+    _add_data_args(eval_pair_p)
+    _add_model_args(eval_pair_p)
+    _add_pair_eval_args(eval_pair_p)
+    eval_pair_p.set_defaults(func=cmd_evaluate_stage2_pair)
     return p
 
 

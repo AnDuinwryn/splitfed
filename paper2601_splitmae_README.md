@@ -18,6 +18,7 @@ pulling the repository on the Linux host.
 | `paper2601_splitmae_training.py` | Standalone SplitFed-style Stage 1 and Stage 2 training helpers. |
 | `paper2601_splitmae_cli.py` | Root-level command-line entry point for inspect, Stage 1, and Stage 2 runs. |
 | `paper2601_splitmae_smoke.py` | Minimal tiny-model smoke example for one Stage 1 and Stage 2 forward/backward pass. |
+| `paper2601_run_full_pipeline.sh` | Ubuntu bash script that runs `/a/` Stage 1, `/a/` Stage 2, `/i/` Stage 1, `/i/` Stage 2, then paired final evaluation. |
 
 ## Import Model
 
@@ -350,27 +351,45 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
   --run-name ast_stage2_i
 ```
 
-9. Final evaluation on held-out test data. The command loads the saved best
-   Stage 2 weights and evaluates both EENT Chinese test and SVD/German test by
-   default:
+9. Final paired evaluation on held-out test data. This loads the saved best
+   Stage 2 `/a/` and `/i/` weights, then reports `single_a`, `single_i`, and
+   combined `/a+i/` patient-level results. It evaluates both EENT Chinese test
+   and SVD/German test by default:
 
 ```bash
-uv run --no-sync python paper2601_splitmae_cli.py evaluate-stage2 \
-  --metadata paper2601_splitmae_runs/ast_stage2_a_metadata.json \
+uv run --no-sync python paper2601_splitmae_cli.py evaluate-stage2-pair \
+  --metadata-a paper2601_splitmae_runs/ast_stage2_a_metadata.json \
+  --metadata-i paper2601_splitmae_runs/ast_stage2_i_metadata.json \
   --eval-dataset both \
-  --results-json paper2601_splitmae_runs/ast_stage2_a_eval.json
+  --results-json paper2601_splitmae_runs/ast_stage2_ai_eval.json
 ```
+
+The evaluation output includes segment-level metrics for each vowel plus
+patient-level `single_a`, `single_i`, and `combined` metrics. The combined
+block is the closest match to the existing project pipeline's final `/a+i/`
+patient-level evaluation.
+
+10. To run the whole sequence in order, use the provided shell script:
 
 ```bash
-uv run --no-sync python paper2601_splitmae_cli.py evaluate-stage2 \
-  --metadata paper2601_splitmae_runs/ast_stage2_i_metadata.json \
-  --eval-dataset both \
-  --results-json paper2601_splitmae_runs/ast_stage2_i_eval.json
+bash paper2601_run_full_pipeline.sh
 ```
 
-The evaluation output includes segment-level `segment_loss` and
-`segment_macro_f1`, plus patient-level metrics for the current binary
-`--num-labels 1` setup.
+Common overrides:
+
+```bash
+RUN_DIR=paper2601_splitmae_runs \
+DEVICE=cuda \
+BATCH_SIZE=128 \
+bash paper2601_run_full_pipeline.sh
+```
+
+Use `EXTRA_ARGS` if your data paths differ from the runbook defaults:
+
+```bash
+EXTRA_ARGS="--pickle-dir-eent Data/EENT_processed/pickle_files --pickle-dir-svd Data/SVD_processed/pickle_files" \
+bash paper2601_run_full_pipeline.sh
+```
 
 For the current binary dysphonia labels, keep `--num-labels 1`. If a true
 multi-label target matrix is introduced later, set `--num-labels` to the label
@@ -423,8 +442,8 @@ creating a formal package namespace.
 - The lightweight MAE decoder defaults to `decoder_embed_dim=256`,
   `decoder_depth=4`, and `decoder_num_heads=8`.
 - Stage 2 uses focal loss, Macro F1, and early stopping patience 10 by default.
-- `evaluate-stage2` loads the saved best Stage 2 weights and reports final
-  EENT/SVD test metrics for one vowel at a time.
+- `evaluate-stage2-pair` loads the saved best Stage 2 `/a/` and `/i/` weights
+  and reports final EENT/SVD test metrics, including combined `/a+i/` scoring.
 - The server classifier supports the paper-style static feature branch through
   `static_feature_dim`, but current repository loaders do not yet emit static
   features.
