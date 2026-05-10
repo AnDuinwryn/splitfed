@@ -100,6 +100,18 @@ def _load_torch():
     return torch
 
 
+def _set_run_seed(seed: int) -> None:
+    from voice_disorder_torch.reproducibility import set_reproducible
+
+    set_reproducible(int(seed))
+
+
+def _live_block(height: int):
+    from voice_disorder_torch.ui.live import LiveBlock, supports_ansi
+
+    return LiveBlock(height=height, stream=None) if supports_ansi() else None
+
+
 def _json_ready(value):
     try:
         import numpy as np
@@ -302,6 +314,7 @@ def _eval_arrays_for_dataset(bundle, vowel: str, dataset_name: str):
     raise ValueError(f"Unknown eval dataset: {dataset_name}")
 
 def cmd_inspect(args: argparse.Namespace) -> None:
+    _set_run_seed(int(args.model_init_seed))
     torch = _load_torch()
     client, server, device = _build_pair(args)
     x = torch.randn(2, int(args.input_tdim), int(args.input_fdim), device=device)
@@ -329,6 +342,7 @@ def cmd_inspect(args: argparse.Namespace) -> None:
 
 
 def cmd_smoke(args: argparse.Namespace) -> None:
+    _set_run_seed(7)
     import paper2601_splitmae_smoke
 
     paper2601_splitmae_smoke.main()
@@ -337,6 +351,7 @@ def cmd_smoke(args: argparse.Namespace) -> None:
 def cmd_train_stage1(args: argparse.Namespace) -> None:
     from paper2601_splitmae_training import Paper2601SplitServerPool, run_stage1_splitfed_round
 
+    _set_run_seed(int(args.model_init_seed))
     pack = _build_loaders(args)
     client, server, device = _build_pair(args)
     optimizer_betas = (float(args.adamw_beta1), float(args.adamw_beta2))
@@ -349,7 +364,20 @@ def cmd_train_stage1(args: argparse.Namespace) -> None:
         weight_decay=float(args.weight_decay),
     )
     history = []
+    block = _live_block(3 + int(args.n_partitions))
+    last_summary = "ma_error: _"
     for round_idx in range(int(args.n_global_rounds)):
+        header = f"global_epoch: {round_idx}/{int(args.n_global_rounds)}"
+        summary = last_summary
+        part_lines = [f"p{idx}: ma_error: _" for idx in range(int(args.n_partitions))]
+        if block is not None:
+            block.redraw([header, summary, "participants:"] + part_lines)
+
+        def on_partition(partition_id, part_stats):
+            part_lines[int(partition_id)] = f"p{partition_id}: ma_error: {part_stats.loss:.4f}"
+            if block is not None:
+                block.redraw([header, summary, "participants:"] + part_lines)
+
         stats = run_stage1_splitfed_round(
             client_base=client,
             server_pool=server_pool,
@@ -359,10 +387,17 @@ def cmd_train_stage1(args: argparse.Namespace) -> None:
             device=device,
             optimizer_betas=optimizer_betas,
             weight_decay=float(args.weight_decay),
+            progress_fn=on_partition,
         )
         round_stats = [{"ma_error": s.loss} for s in stats]
         history.append(round_stats)
-        print(json.dumps({"round": round_idx, "partition_stats": round_stats}))
+        mean_ma_error = sum(s.loss for s in stats) / max(len(stats), 1)
+        summary = f"ma_error: {mean_ma_error:.4f}"
+        last_summary = summary
+        if block is not None:
+            block.redraw([header, summary, "participants:"] + part_lines)
+        else:
+            print(f"{header}  {summary}")
     saved = _save_pair(args, client, server_pool.global_model(), "stage1")
     print(json.dumps({"saved": saved, "history": history}, indent=2))
 
@@ -375,6 +410,7 @@ def cmd_train_stage2(args: argparse.Namespace) -> None:
         run_stage2_splitfed_round,
     )
 
+    _set_run_seed(int(args.model_init_seed))
     pack = _build_loaders(args)
     client, server, device = _build_pair(args)
     optimizer_betas = (float(args.adamw_beta1), float(args.adamw_beta2))
@@ -395,7 +431,22 @@ def cmd_train_stage2(args: argparse.Namespace) -> None:
     best_client_sd = copy.deepcopy(client.state_dict())
     best_server_sd = copy.deepcopy(server_pool.global_model().state_dict())
     best_round = -1
+    block = _live_block(3 + int(args.n_partitions))
+    last_summary = "val_macro_f1: _  val_loss: _  patience: _"
     for round_idx in range(int(args.n_global_rounds)):
+        header = f"global_epoch: {round_idx}/{int(args.n_global_rounds)}"
+        summary = last_summary
+        part_lines = [f"p{idx}: train_macro_f1: _  train_loss: _" for idx in range(int(args.n_partitions))]
+        if block is not None:
+            block.redraw([header, summary, "participants:"] + part_lines)
+
+        def on_partition(partition_id, part_stats):
+            part_lines[int(partition_id)] = (
+                f"p{partition_id}: train_macro_f1: {part_stats.score:.3f}  train_loss: {part_stats.loss:.4f}"
+            )
+            if block is not None:
+                block.redraw([header, summary, "participants:"] + part_lines)
+
         stats = run_stage2_splitfed_round(
             client_base=client,
             server_pool=server_pool,
@@ -405,6 +456,7 @@ def cmd_train_stage2(args: argparse.Namespace) -> None:
             device=device,
             optimizer_betas=optimizer_betas,
             weight_decay=float(args.weight_decay),
+            progress_fn=on_partition,
         )
         val = evaluate_stage2(
             client=client,
@@ -415,17 +467,13 @@ def cmd_train_stage2(args: argparse.Namespace) -> None:
         )
         round_stats = [{"loss": s.loss, "macro_f1": s.score} for s in stats]
         history.append({"train": round_stats, "val": {"loss": val.loss, "macro_f1": val.score}})
-        print(
-            json.dumps(
-                {
-                    "round": round_idx,
-                    "partition_stats": round_stats,
-                    "val_loss": val.loss,
-                    "val_macro_f1": val.score,
-                    "patience_left": patience_left if patience > 0 else "off",
-                }
-            )
-        )
+        pstr = f"{patience_left}" if patience > 0 else "off"
+        summary = f"val_macro_f1: {val.score:.4f}  val_loss: {val.loss:.4f}  patience: {pstr}"
+        last_summary = summary
+        if block is not None:
+            block.redraw([header, summary, "participants:"] + part_lines)
+        else:
+            print(f"{header}  {summary}")
         if val.score > best_score + 1e-12:
             best_score = float(val.score)
             best_round = int(round_idx)
@@ -436,7 +484,7 @@ def cmd_train_stage2(args: argparse.Namespace) -> None:
         elif patience > 0:
             patience_left -= 1
             if patience_left <= 0:
-                print(json.dumps({"early_stop": True, "best_round": best_round, "best_val_macro_f1": best_score}))
+                print(f"! early_stop  best_round: {best_round}  best_val_macro_f1: {best_score:.4f}")
                 break
     client.load_state_dict(best_client_sd)
     best_server = server_pool.global_model()
@@ -478,6 +526,7 @@ def cmd_evaluate_stage2_pair(args: argparse.Namespace) -> None:
 
     args_a, meta_a = _args_from_metadata(args, args.metadata_a)
     args_i, meta_i = _args_from_metadata(args, args.metadata_i)
+    _set_run_seed(int(args_a.model_init_seed))
     if args_a.vowel != "a" or args_i.vowel != "i":
         raise SystemExit(
             f"evaluate-stage2-pair expects metadata-a for /a/ and metadata-i for /i/, "

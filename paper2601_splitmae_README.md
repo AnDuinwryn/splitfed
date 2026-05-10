@@ -212,6 +212,12 @@ test cheap. It checks:
 
 Run all commands from the repository root.
 
+The CLI calls the project's `set_reproducible(...)` helper at each training and
+evaluation entry point. It locks Python, NumPy, PyTorch, CUDA seeds, cuDNN
+determinism, and deterministic algorithms on a best-effort basis. The training
+display follows the existing split-learning style: `global_epoch`, a compact
+summary line, and one participant line per client partition.
+
 1. Syntax check:
 
 ```bash
@@ -381,6 +387,7 @@ Common overrides:
 RUN_DIR=paper2601_splitmae_runs \
 DEVICE=cuda \
 BATCH_SIZE=128 \
+MODEL_INIT_SEED=2718 \
 bash paper2601_run_full_pipeline.sh
 ```
 
@@ -435,6 +442,9 @@ creating a formal package namespace.
 - Stage 1 defaults to 120 global rounds and one local epoch per round to match
   the paper's 120 pre-training epochs.
 - Training defaults use AdamW with betas `(0.9, 0.95)` and weight decay `0.05`.
+- Training and evaluation entry points call the existing project reproducibility
+  helper using `--model-init-seed`; the full-pipeline shell script also exports
+  `PYTHONHASHSEED` and `CUBLAS_WORKSPACE_CONFIG` before starting Python.
 - Content-aware masking follows the paper's high-variance candidate-pool rule:
   select the top `max(70% * N_mask, 50% * N_total)` patches by variance, sample
   70% of masked patches from that group, and sample the rest from remaining

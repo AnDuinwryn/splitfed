@@ -14,6 +14,10 @@ set -euo pipefail
 #   N_GLOBAL_STAGE2=250
 #   N_LOCAL_EPOCHS=1
 #   BATCH_SIZE=256
+#   MODEL_INIT_SEED=2718
+#   DEV_TEST_SEED=8
+#   TRAIN_VAL_SEED=100
+#   PARTITION_SEED=42
 #   DEVICE=cuda
 #   EXTRA_ARGS="--pickle-dir-eent ... --pickle-dir-svd ..."
 
@@ -27,10 +31,16 @@ N_GLOBAL_STAGE1="${N_GLOBAL_STAGE1:-120}"
 N_GLOBAL_STAGE2="${N_GLOBAL_STAGE2:-250}"
 N_LOCAL_EPOCHS="${N_LOCAL_EPOCHS:-1}"
 BATCH_SIZE="${BATCH_SIZE:-256}"
+MODEL_INIT_SEED="${MODEL_INIT_SEED:-2718}"
+DEV_TEST_SEED="${DEV_TEST_SEED:-8}"
+TRAIN_VAL_SEED="${TRAIN_VAL_SEED:-100}"
+PARTITION_SEED="${PARTITION_SEED:-42}"
 DEVICE="${DEVICE:-}"
 EXTRA_ARGS="${EXTRA_ARGS:-}"
 
 mkdir -p "${RUN_DIR}"
+export PYTHONHASHSEED="${PYTHONHASHSEED:-${MODEL_INIT_SEED}}"
+export CUBLAS_WORKSPACE_CONFIG="${CUBLAS_WORKSPACE_CONFIG:-:4096:8}"
 
 DEVICE_ARGS=()
 if [[ -n "${DEVICE}" ]]; then
@@ -44,6 +54,10 @@ COMMON_ARGS=(
   --n-client-blocks "${N_CLIENT_BLOCKS}"
   --n-partitions "${N_PARTITIONS}"
   --batch-size "${BATCH_SIZE}"
+  --model-init-seed "${MODEL_INIT_SEED}"
+  --dev-test-seed "${DEV_TEST_SEED}"
+  --train-val-seed "${TRAIN_VAL_SEED}"
+  --partition-seed "${PARTITION_SEED}"
   --n-local-epochs "${N_LOCAL_EPOCHS}"
   --save-dir "${RUN_DIR}"
   "${DEVICE_ARGS[@]}"

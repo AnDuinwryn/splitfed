@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Iterable, Optional
 
 import torch
@@ -253,6 +254,7 @@ def run_stage1_splitfed_round(
     average_servers: bool = True,
     optimizer_betas: tuple[float, float] = PAPER_ADAMW_BETAS,
     weight_decay: float = PAPER_WEIGHT_DECAY,
+    progress_fn: Optional[Callable[[int, SplitStepStats], None]] = None,
 ) -> list[SplitStepStats]:
     client_sds: list[dict] = []
     partition_stats: list[SplitStepStats] = []
@@ -270,7 +272,10 @@ def run_stage1_splitfed_round(
             weight_decay=weight_decay,
         )
         client_sds.append(client_sd)
-        partition_stats.append(_mean_stats(stats))
+        part_stats = _mean_stats(stats)
+        partition_stats.append(part_stats)
+        if progress_fn is not None:
+            progress_fn(int(partition_id), part_stats)
     client_base.load_state_dict(average_state_dicts(client_sds))
     if average_servers:
         server_pool.average_replicas()
@@ -288,6 +293,7 @@ def run_stage2_splitfed_round(
     average_servers: bool = True,
     optimizer_betas: tuple[float, float] = PAPER_ADAMW_BETAS,
     weight_decay: float = PAPER_WEIGHT_DECAY,
+    progress_fn: Optional[Callable[[int, SplitStepStats], None]] = None,
 ) -> list[SplitStepStats]:
     client_sds: list[dict] = []
     partition_stats: list[SplitStepStats] = []
@@ -305,7 +311,10 @@ def run_stage2_splitfed_round(
             weight_decay=weight_decay,
         )
         client_sds.append(client_sd)
-        partition_stats.append(_mean_stats(stats))
+        part_stats = _mean_stats(stats)
+        partition_stats.append(part_stats)
+        if progress_fn is not None:
+            progress_fn(int(partition_id), part_stats)
     client_base.load_state_dict(average_state_dicts(client_sds))
     if average_servers:
         server_pool.average_replicas()
