@@ -329,7 +329,8 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
   --n-local-epochs 5 \
   --early-stopping-patience 10 \
   --num-labels 1 \
-  --static-feature-source auto \
+  --static-feature-source table \
+  --static-feature-table paper2601_local_artifacts/paper2601_static_131_features/paper2601_static_131_by_patient_vowel.csv \
   --load-client paper2601_splitmae_runs/ast_stage1_a_client.pt \
   --load-server paper2601_splitmae_runs/ast_stage1_a_server.pt \
   --run-name ast_stage2_a
@@ -341,6 +342,7 @@ Static feature source options:
 | --- | --- |
 | `none` | no static branch; `static_feature_dim=0` |
 | `mel` | built-in 23-dimensional mel summary statistics; always available |
+| `table` | use the pre-extracted 131D OpenSMILE+Parselmouth CSV; current default |
 | `auto` | use OpenSMILE if installed and audio paths are supplied, else Parselmouth if installed and audio paths are supplied, else `mel` |
 | `opensmile` | OpenSMILE eGeMAPSv02 functionals from raw audio; requires audio path resolution |
 | `parselmouth` | compact Praat/Parselmouth pitch, intensity, HNR, duration, RMS features; requires audio path resolution |
@@ -361,6 +363,21 @@ audio files whose filename contains the patient id and vowel token:
 --static-feature-source parselmouth \
 --static-audio-root-eent Data/EENT_raw \
 --static-audio-root-svd Data/SVD_raw
+```
+
+The current recommended path is to pre-extract the paper-style 131D table on
+Windows and copy it to the Linux host:
+
+```bash
+paper2601_local_artifacts/paper2601_static_131_features/paper2601_static_131_by_patient_vowel.csv
+paper2601_local_artifacts/paper2601_static_131_features/paper2601_static_131_metadata.json
+```
+
+Then train with:
+
+```bash
+--static-feature-source table \
+--static-feature-table paper2601_local_artifacts/paper2601_static_131_features/paper2601_static_131_by_patient_vowel.csv
 ```
 
 8. Repeat the same current run for vowel `/i/`:
@@ -392,7 +409,8 @@ uv run --no-sync python paper2601_splitmae_cli.py train-stage2 \
   --n-local-epochs 5 \
   --early-stopping-patience 10 \
   --num-labels 1 \
-  --static-feature-source auto \
+  --static-feature-source table \
+  --static-feature-table paper2601_local_artifacts/paper2601_static_131_features/paper2601_static_131_by_patient_vowel.csv \
   --load-client paper2601_splitmae_runs/ast_stage1_i_client.pt \
   --load-server paper2601_splitmae_runs/ast_stage1_i_server.pt \
   --run-name ast_stage2_i
@@ -409,7 +427,8 @@ uv run --no-sync python paper2601_splitmae_cli.py evaluate-stage2-pair \
   --metadata-i paper2601_splitmae_runs/ast_stage2_i_metadata.json \
   --eval-dataset both \
   --results-json paper2601_splitmae_runs/ast_stage2_ai_eval.json \
-  --static-feature-source auto
+  --static-feature-source table \
+  --static-feature-table paper2601_local_artifacts/paper2601_static_131_features/paper2601_static_131_by_patient_vowel.csv
 ```
 
 The terminal output uses the existing project evaluation display
@@ -423,10 +442,18 @@ project pipeline's final `/a+i/` patient-level evaluation.
 
 10. Full pipeline bash script. This runs the same CLI sequence above in order:
     `/a/` Stage 1, `/a/` Stage 2, `/i/` Stage 1, `/i/` Stage 2, then paired
-    `/a+i/` evaluation.
+    `/a+i/` evaluation. The default output directory is
+    `paper2601_splitmae_runs_local5`.
 
 ```bash
 bash paper2601_run_full_pipeline.sh
+```
+
+The companion script with both Stage 1 and Stage 2 local epochs set to `1`
+writes to a separate directory, so it will not overwrite the local-5 run:
+
+```bash
+bash paper2601_run_full_pipeline_local1.sh
 ```
 
 Common overrides:
@@ -435,8 +462,8 @@ Common overrides:
 RUN_DIR=paper2601_splitmae_runs \
 DEVICE=cuda \
 BATCH_SIZE=64 \
-STATIC_FEATURE_SOURCE=opensmile \
-STATIC_AUDIO_MANIFEST=metadata/audio_manifest.csv \
+STATIC_FEATURE_SOURCE=table \
+STATIC_FEATURE_TABLE=paper2601_local_artifacts/paper2601_static_131_features/paper2601_static_131_by_patient_vowel.csv \
 MODEL_INIT_SEED=2718 \
 bash paper2601_run_full_pipeline.sh
 ```

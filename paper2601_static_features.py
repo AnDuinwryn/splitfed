@@ -5,6 +5,7 @@ import json
 import math
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -18,7 +19,8 @@ from voice_disorder_torch.data.load import LoadedDataBundle, load_all_preprocess
 from voice_disorder_torch.data.partitioning import assign_partitions_by_patient, indices_for_partition
 
 
-STATIC_SOURCES = {"none", "auto", "mel", "opensmile", "parselmouth"}
+STATIC_SOURCES = {"none", "auto", "mel", "opensmile", "parselmouth", "table"}
+TABLE_META_COLUMNS = {"dataset", "patient_id", "id", "vowel", "n_files", "audio_paths", "audio_path"}
 
 
 @dataclass(frozen=True)
@@ -27,6 +29,7 @@ class StaticFeatureConfig:
     audio_manifest: Optional[Path] = None
     audio_root_eent: Optional[Path] = None
     audio_root_svd: Optional[Path] = None
+    feature_table: Optional[Path] = None
 
 
 @dataclass(frozen=True)
@@ -83,7 +86,7 @@ def _importable(name: str) -> bool:
 
 def resolve_static_backend(config: StaticFeatureConfig) -> str:
     source = validate_static_source(config.source)
-    if source in {"none", "mel", "opensmile", "parselmouth"}:
+    if source in {"none", "mel", "opensmile", "parselmouth", "table"}:
         return source
 
     has_audio_hint = any(
@@ -94,6 +97,75 @@ def resolve_static_backend(config: StaticFeatureConfig) -> str:
     if has_audio_hint and _importable("parselmouth"):
         return "parselmouth"
     return "mel"
+
+
+def _norm_dataset(dataset: str) -> str:
+    dataset = str(dataset).lower().strip()
+    if dataset in {"eent", "chinese", "china", "ch"}:
+        return "chinese"
+    if dataset in {"svd", "german", "ger"}:
+        return "german"
+    return dataset
+
+
+def _norm_patient(patient_id) -> str:
+    return str(patient_id).strip().lower()
+
+
+@lru_cache(maxsize=8)
+def _load_static_feature_table(path_text: str) -> tuple[dict[tuple[str, str, str], np.ndarray], list[str]]:
+    path = Path(path_text)
+    if not path.is_file():
+        raise FileNotFoundError(f"Static feature table not found: {path}")
+    with path.open("r", newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            raise ValueError(f"Static feature table has no header: {path}")
+        feature_names = [name for name in reader.fieldnames if name not in TABLE_META_COLUMNS]
+        if not feature_names:
+            raise ValueError(f"No feature columns found in static feature table: {path}")
+        table: dict[tuple[str, str, str], np.ndarray] = {}
+        for row in reader:
+            dataset = _norm_dataset(row.get("dataset", ""))
+            patient = _norm_patient(row.get("patient_id", row.get("id", "")))
+            vowel = str(row.get("vowel", "")).lower().strip().strip("/")
+            if not dataset or not patient or vowel not in {"a", "i"}:
+                continue
+            values = np.asarray([float(row[name]) for name in feature_names], dtype=np.float32)
+            table[(dataset, vowel, patient)] = np.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0)
+    if not table:
+        raise ValueError(f"No usable rows found in static feature table: {path}")
+    return table, feature_names
+
+
+def compute_table_static_features(
+    *,
+    patient_ids: Iterable,
+    dataset: str,
+    vowel: str,
+    config: StaticFeatureConfig,
+) -> tuple[np.ndarray, list[str]]:
+    if config.feature_table is None:
+        raise ValueError("Set --static-feature-table when using --static-feature-source table.")
+    table, names = _load_static_feature_table(str(Path(config.feature_table)))
+    dataset = _norm_dataset(dataset)
+    vowel = str(vowel).lower().strip().strip("/")
+    rows = []
+    missing = []
+    for pid in patient_ids:
+        key = (dataset, vowel, _norm_patient(pid))
+        value = table.get(key)
+        if value is None:
+            missing.append(str(pid))
+        else:
+            rows.append(value)
+    if missing:
+        preview = ", ".join(missing[:10])
+        raise KeyError(
+            f"Static feature table is missing {len(missing)} entries for dataset={dataset!r}, "
+            f"vowel={vowel!r}; first missing patient IDs: {preview}"
+        )
+    return np.vstack(rows).astype(np.float32), names
 
 
 def mel_static_feature_names() -> list[str]:
@@ -394,11 +466,21 @@ def compute_static_features(
     config: StaticFeatureConfig,
     backend: Optional[str] = None,
 ) -> tuple[np.ndarray, list[str], str]:
+    if backend in {"opensmile_parselmouth_131", "opensmile+parselmouth", "opensmile_parselmouth"}:
+        backend = "table"
     backend = resolve_static_backend(config) if backend is None else validate_static_source(backend)
     if backend == "auto":
         backend = resolve_static_backend(config)
     if backend == "none":
         return np.zeros((len(x_nhwc), 0), dtype=np.float32), [], "none"
+    if backend == "table":
+        feats, names = compute_table_static_features(
+            patient_ids=patient_ids,
+            dataset=dataset,
+            vowel=vowel,
+            config=config,
+        )
+        return feats, names, "opensmile_parselmouth_131"
     if backend == "mel":
         feats, names = compute_mel_static_features(x_nhwc)
         return feats, names, "mel"

@@ -47,7 +47,8 @@ def _add_model_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--mask-strategy", choices=["content", "random"], default="content")
     p.add_argument("--num-labels", type=_positive_int, default=1)
     p.add_argument("--static-feature-dim", type=int, default=0, help="Usually inferred when static features are on.")
-    p.add_argument("--static-feature-source", choices=["none", "auto", "mel", "opensmile", "parselmouth"], default="none")
+    p.add_argument("--static-feature-source", choices=["none", "auto", "mel", "opensmile", "parselmouth", "table"], default="none")
+    p.add_argument("--static-feature-table", type=Path, default=None)
     p.add_argument("--static-audio-manifest", type=Path, default=None)
     p.add_argument("--static-audio-root-eent", type=Path, default=None)
     p.add_argument("--static-audio-root-svd", type=Path, default=None)
@@ -184,6 +185,7 @@ def _static_config_from_args(args: argparse.Namespace):
 
     return StaticFeatureConfig(
         source=str(getattr(args, "static_feature_source", "none")),
+        feature_table=getattr(args, "static_feature_table", None),
         audio_manifest=getattr(args, "static_audio_manifest", None),
         audio_root_eent=getattr(args, "static_audio_root_eent", None),
         audio_root_svd=getattr(args, "static_audio_root_svd", None),
@@ -327,6 +329,9 @@ def _save_pair(args: argparse.Namespace, client, server, stage: str) -> dict[str
         "static_feature_dim": int(args.static_feature_dim),
         "static_feature_source": str(getattr(args, "static_feature_source", "none")),
         "static_feature_backend": str(getattr(args, "static_feature_backend", "none")),
+        "static_feature_table": (
+            str(args.static_feature_table) if getattr(args, "static_feature_table", None) is not None else None
+        ),
         "static_feature_names": list(getattr(args, "static_feature_names", [])),
         "static_feature_mean": list(getattr(args, "static_feature_mean", [])),
         "static_feature_std": list(getattr(args, "static_feature_std", [])),
@@ -387,9 +392,14 @@ def _apply_metadata_to_args(args: argparse.Namespace) -> dict:
         if meta.get(meta_key) is not None and hasattr(args, arg_name):
             setattr(args, arg_name, meta[meta_key])
     backend = meta.get("static_feature_backend")
-    if backend in {"none", "mel", "opensmile", "parselmouth"} and hasattr(args, "static_feature_source"):
+    if backend in {"none", "mel", "opensmile", "parselmouth", "table"} and hasattr(args, "static_feature_source"):
         args.static_feature_source = backend
+    if backend in {"opensmile_parselmouth_131", "opensmile+parselmouth", "opensmile_parselmouth"} and hasattr(
+        args, "static_feature_source"
+    ):
+        args.static_feature_source = "table"
     for meta_key, arg_name in (
+        ("static_feature_table", "static_feature_table"),
         ("static_audio_manifest", "static_audio_manifest"),
         ("static_audio_root_eent", "static_audio_root_eent"),
         ("static_audio_root_svd", "static_audio_root_svd"),

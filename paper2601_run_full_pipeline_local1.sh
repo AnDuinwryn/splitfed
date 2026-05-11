@@ -1,33 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run from the repository root on Linux/Ubuntu.
-#
-# Environment overrides:
-#   RUN_DIR=paper2601_splitmae_runs_local5
-#   MODEL_SIZE=base384
-#   INPUT_FDIM=128
-#   INPUT_TDIM=259
-#   N_CLIENT_BLOCKS=2
-#   N_PARTITIONS=5
-#   N_GLOBAL_STAGE1=120
-#   N_GLOBAL_STAGE2=250
-#   N_LOCAL_STAGE1=5
-#   N_LOCAL_STAGE2=5
-#   BATCH_SIZE=64
-#   STATIC_FEATURE_SOURCE=table  # none | auto | mel | opensmile | parselmouth | table
-#   STATIC_FEATURE_TABLE=paper2601_local_artifacts/paper2601_static_131_features/paper2601_static_131_by_patient_vowel.csv
-#   STATIC_AUDIO_MANIFEST=/path/to/audio_manifest.csv
-#   STATIC_AUDIO_ROOT_EENT=/path/to/eent_wavs
-#   STATIC_AUDIO_ROOT_SVD=/path/to/svd_wavs
-#   MODEL_INIT_SEED=2718
-#   DEV_TEST_SEED=8
-#   TRAIN_VAL_SEED=100
-#   PARTITION_SEED=42
-#   DEVICE=cuda
-#   EXTRA_ARGS="--pickle-dir-eent ... --pickle-dir-svd ..."
+# Same as paper2601_run_full_pipeline.sh, but both split stages use
+# one local epoch per global round and a separate default output directory.
 
-RUN_DIR="${RUN_DIR:-paper2601_splitmae_runs_local5}"
+RUN_DIR="${RUN_DIR:-paper2601_splitmae_runs_local1}"
 MODEL_SIZE="${MODEL_SIZE:-base384}"
 INPUT_FDIM="${INPUT_FDIM:-128}"
 INPUT_TDIM="${INPUT_TDIM:-259}"
@@ -35,8 +12,8 @@ N_CLIENT_BLOCKS="${N_CLIENT_BLOCKS:-2}"
 N_PARTITIONS="${N_PARTITIONS:-5}"
 N_GLOBAL_STAGE1="${N_GLOBAL_STAGE1:-120}"
 N_GLOBAL_STAGE2="${N_GLOBAL_STAGE2:-250}"
-N_LOCAL_STAGE1="${N_LOCAL_STAGE1:-5}"
-N_LOCAL_STAGE2="${N_LOCAL_STAGE2:-5}"
+N_LOCAL_STAGE1="${N_LOCAL_STAGE1:-1}"
+N_LOCAL_STAGE2="${N_LOCAL_STAGE2:-1}"
 BATCH_SIZE="${BATCH_SIZE:-64}"
 STATIC_FEATURE_SOURCE="${STATIC_FEATURE_SOURCE:-table}"
 STATIC_FEATURE_TABLE="${STATIC_FEATURE_TABLE:-paper2601_local_artifacts/paper2601_static_131_features/paper2601_static_131_by_patient_vowel.csv}"
