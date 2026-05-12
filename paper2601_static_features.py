@@ -20,7 +20,26 @@ from voice_disorder_torch.data.partitioning import assign_partitions_by_patient,
 
 
 STATIC_SOURCES = {"none", "auto", "mel", "opensmile", "parselmouth", "table"}
+STATIC_FEATURE_PRESETS = {
+    "all",
+    "pathology",
+    "pathology_voice_quality",
+    "pathology_source_tilt",
+    "pathology_plus_source_tilt",
+    "pathology_voicing",
+    "pathology_plus_voicing",
+}
 TABLE_META_COLUMNS = {"dataset", "patient_id", "id", "vowel", "n_files", "audio_paths", "audio_path"}
+PATHOLOGY_VOICE_QUALITY_TOKENS = ("hnr", "jitter", "shimmer", "cpp", "cepstral")
+SOURCE_TILT_TOKENS = ("logrelf0-h1-h2", "logrelf0-h1-a3")
+VOICING_STABILITY_TOKENS = (
+    "voicedsegmentspersec",
+    "meanvoicedsegmentlengthsec",
+    "stddevvoicedsegmentlengthsec",
+    "meanunvoicedsegmentlength",
+    "stddevunvoicedsegmentlength",
+    "pitch_voiced_fraction",
+)
 
 
 @dataclass(frozen=True)
@@ -30,12 +49,14 @@ class StaticFeatureConfig:
     audio_root_eent: Optional[Path] = None
     audio_root_svd: Optional[Path] = None
     feature_table: Optional[Path] = None
+    feature_preset: str = "all"
 
 
 @dataclass(frozen=True)
 class StaticFeatureInfo:
     source: str
     backend: str
+    preset: str
     dim: int
     names: list[str]
     mean: list[float]
@@ -74,6 +95,46 @@ def validate_static_source(source: str) -> str:
         valid = ", ".join(sorted(STATIC_SOURCES))
         raise ValueError(f"Unknown static feature source {source!r}; valid choices: {valid}")
     return source
+
+
+def validate_static_feature_preset(preset: str) -> str:
+    preset = str(preset).lower().strip()
+    if preset not in STATIC_FEATURE_PRESETS:
+        valid = ", ".join(sorted(STATIC_FEATURE_PRESETS))
+        raise ValueError(f"Unknown static feature preset {preset!r}; valid choices: {valid}")
+    return preset
+
+
+def apply_static_feature_preset(
+    features: np.ndarray,
+    names: list[str],
+    preset: str,
+) -> tuple[np.ndarray, list[str]]:
+    preset = validate_static_feature_preset(preset)
+    if preset == "all" or features.shape[1] == 0:
+        return features, names
+    if preset == "pathology_voice_quality":
+        preset = "pathology"
+    if preset == "pathology_plus_source_tilt":
+        preset = "pathology_source_tilt"
+    if preset == "pathology_plus_voicing":
+        preset = "pathology_voicing"
+    tokens = list(PATHOLOGY_VOICE_QUALITY_TOKENS)
+    if preset in {"pathology_source_tilt", "pathology_voicing"}:
+        tokens.extend(SOURCE_TILT_TOKENS)
+    if preset == "pathology_voicing":
+        tokens.extend(VOICING_STABILITY_TOKENS)
+    keep = [
+        idx
+        for idx, name in enumerate(names)
+        if any(token in str(name).lower() for token in tokens)
+    ]
+    if not keep:
+        token_text = ", ".join(tokens)
+        raise ValueError(f"Static feature preset {preset!r} selected no columns. Expected names containing: {token_text}.")
+    selected = features[:, keep].astype(np.float32, copy=False)
+    selected_names = [names[idx] for idx in keep]
+    return selected, selected_names
 
 
 def _importable(name: str) -> bool:
@@ -480,9 +541,11 @@ def compute_static_features(
             vowel=vowel,
             config=config,
         )
+        feats, names = apply_static_feature_preset(feats, names, config.feature_preset)
         return feats, names, "opensmile_parselmouth_131"
     if backend == "mel":
         feats, names = compute_mel_static_features(x_nhwc)
+        feats, names = apply_static_feature_preset(feats, names, config.feature_preset)
         return feats, names, "mel"
     feats, names = compute_audio_static_features(
         patient_ids=patient_ids,
@@ -491,6 +554,7 @@ def compute_static_features(
         backend=backend,
         config=config,
     )
+    feats, names = apply_static_feature_preset(feats, names, config.feature_preset)
     return feats, names, backend
 
 
@@ -580,6 +644,7 @@ def build_static_ssast_partition_loaders(
     info = StaticFeatureInfo(
         source=validate_static_source(config.source),
         backend=backend,
+        preset=validate_static_feature_preset(config.feature_preset),
         dim=int(train_static.shape[1]),
         names=names,
         mean=[float(x) for x in mean.tolist()],

@@ -17,6 +17,7 @@ N_LOCAL_STAGE2="${N_LOCAL_STAGE2:-1}"
 BATCH_SIZE="${BATCH_SIZE:-64}"
 STATIC_FEATURE_SOURCE="${STATIC_FEATURE_SOURCE:-table}"
 STATIC_FEATURE_TABLE="${STATIC_FEATURE_TABLE:-paper2601_local_artifacts/paper2601_static_131_features/paper2601_static_131_by_patient_vowel.csv}"
+STATIC_FEATURE_PRESET="${STATIC_FEATURE_PRESET:-all}"
 STATIC_AUDIO_MANIFEST="${STATIC_AUDIO_MANIFEST:-}"
 STATIC_AUDIO_ROOT_EENT="${STATIC_AUDIO_ROOT_EENT:-}"
 STATIC_AUDIO_ROOT_SVD="${STATIC_AUDIO_ROOT_SVD:-}"
@@ -36,7 +37,7 @@ if [[ -n "${DEVICE}" ]]; then
   DEVICE_ARGS=(--device "${DEVICE}")
 fi
 
-STATIC_ARGS=(--static-feature-source "${STATIC_FEATURE_SOURCE}")
+STATIC_ARGS=(--static-feature-source "${STATIC_FEATURE_SOURCE}" --static-feature-preset "${STATIC_FEATURE_PRESET}")
 if [[ -n "${STATIC_FEATURE_TABLE}" ]]; then
   STATIC_ARGS+=(--static-feature-table "${STATIC_FEATURE_TABLE}")
 fi

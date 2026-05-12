@@ -95,6 +95,7 @@ def _eval_static_features_with_svd_policy(
         "dataset": dataset_name,
         "vowel": vowel,
         "backend": resolved,
+        "preset": str(getattr(args_for_vowel, "static_feature_preset", meta.get("static_feature_preset", "all"))),
         "dim": int(raw.shape[1]),
         "n_rows": int(raw.shape[0]),
         "policy": policy,

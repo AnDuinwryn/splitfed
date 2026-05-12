@@ -49,6 +49,23 @@ def _add_model_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--static-feature-dim", type=int, default=0, help="Usually inferred when static features are on.")
     p.add_argument("--static-feature-source", choices=["none", "auto", "mel", "opensmile", "parselmouth", "table"], default="none")
     p.add_argument("--static-feature-table", type=Path, default=None)
+    p.add_argument(
+        "--static-feature-preset",
+        choices=[
+            "all",
+            "pathology",
+            "pathology_voice_quality",
+            "pathology_source_tilt",
+            "pathology_plus_source_tilt",
+            "pathology_voicing",
+            "pathology_plus_voicing",
+        ],
+        default="all",
+        help=(
+            "Column preset for static features. pathology keeps HNR/jitter/shimmer/CPP-like columns; "
+            "pathology_source_tilt adds H1-H2/H1-A3; pathology_voicing also adds voicing stability."
+        ),
+    )
     p.add_argument("--static-audio-manifest", type=Path, default=None)
     p.add_argument("--static-audio-root-eent", type=Path, default=None)
     p.add_argument("--static-audio-root-svd", type=Path, default=None)
@@ -186,6 +203,7 @@ def _static_config_from_args(args: argparse.Namespace):
     return StaticFeatureConfig(
         source=str(getattr(args, "static_feature_source", "none")),
         feature_table=getattr(args, "static_feature_table", None),
+        feature_preset=str(getattr(args, "static_feature_preset", "all")),
         audio_manifest=getattr(args, "static_audio_manifest", None),
         audio_root_eent=getattr(args, "static_audio_root_eent", None),
         audio_root_svd=getattr(args, "static_audio_root_svd", None),
@@ -210,6 +228,7 @@ def _build_loaders(args: argparse.Namespace, *, include_static: bool = False):
         )
         args.static_feature_dim = int(info.dim)
         args.static_feature_backend = info.backend
+        args.static_feature_preset = info.preset
         args.static_feature_names = info.names
         args.static_feature_mean = info.mean
         args.static_feature_std = info.std
@@ -217,6 +236,7 @@ def _build_loaders(args: argparse.Namespace, *, include_static: bool = False):
 
     args.static_feature_dim = 0
     args.static_feature_backend = "none"
+    args.static_feature_preset = "all"
     args.static_feature_names = []
     args.static_feature_mean = []
     args.static_feature_std = []
@@ -329,6 +349,7 @@ def _save_pair(args: argparse.Namespace, client, server, stage: str) -> dict[str
         "static_feature_dim": int(args.static_feature_dim),
         "static_feature_source": str(getattr(args, "static_feature_source", "none")),
         "static_feature_backend": str(getattr(args, "static_feature_backend", "none")),
+        "static_feature_preset": str(getattr(args, "static_feature_preset", "all")),
         "static_feature_table": (
             str(args.static_feature_table) if getattr(args, "static_feature_table", None) is not None else None
         ),
@@ -366,6 +387,14 @@ def _save_pair(args: argparse.Namespace, client, server, stage: str) -> dict[str
     return {"client": str(client_path), "server": str(server_path), "metadata": str(meta_path)}
 
 
+def _print_saved_pair_summary(saved: dict[str, str], *, best_round: int | None = None, best_score: float | None = None) -> None:
+    print(f"[done] saved client: {saved['client']}")
+    print(f"[done] saved server: {saved['server']}")
+    print(f"[done] saved metadata: {saved['metadata']}")
+    if best_round is not None and best_score is not None:
+        print(f"[done] best_round: {best_round}  best_val_macro_f1: {best_score:.4f}")
+
+
 def _apply_metadata_to_args(args: argparse.Namespace) -> dict:
     if args.metadata is None:
         return {}
@@ -384,6 +413,7 @@ def _apply_metadata_to_args(args: argparse.Namespace) -> dict:
         "num_labels": "num_labels",
         "static_feature_dim": "static_feature_dim",
         "static_feature_source": "static_feature_source",
+        "static_feature_preset": "static_feature_preset",
         "mask_ratio": "mask_ratio",
         "mask_strategy": "mask_strategy",
         "stage2_focal_gamma": "focal_gamma",
@@ -483,7 +513,6 @@ def cmd_train_stage1(args: argparse.Namespace) -> None:
         optimizer_betas=optimizer_betas,
         weight_decay=float(args.weight_decay),
     )
-    history = []
     block = _live_block(3 + int(args.n_partitions))
     last_summary = "ma_error: _"
     for round_idx in range(int(args.n_global_rounds)):
@@ -509,8 +538,6 @@ def cmd_train_stage1(args: argparse.Namespace) -> None:
             weight_decay=float(args.weight_decay),
             progress_fn=on_partition,
         )
-        round_stats = [{"ma_error": s.loss} for s in stats]
-        history.append(round_stats)
         mean_ma_error = sum(s.loss for s in stats) / max(len(stats), 1)
         summary = f"ma_error: {mean_ma_error:.4f}"
         last_summary = summary
@@ -519,7 +546,7 @@ def cmd_train_stage1(args: argparse.Namespace) -> None:
         else:
             print(f"{header}  {summary}")
     saved = _save_pair(args, client, server_pool.global_model(), "stage1")
-    print(json.dumps({"saved": saved, "history": history}, indent=2))
+    _print_saved_pair_summary(saved)
 
 
 def cmd_train_stage2(args: argparse.Namespace) -> None:
@@ -544,7 +571,6 @@ def cmd_train_stage2(args: argparse.Namespace) -> None:
         weight_decay=float(args.weight_decay),
     )
     val_criterion = BinaryFocalWithLogitsLoss(gamma=float(args.focal_gamma), alpha=args.focal_alpha)
-    history = []
     patience = int(args.early_stopping_patience)
     patience_left = patience
     best_score = float("-inf")
@@ -585,8 +611,6 @@ def cmd_train_stage2(args: argparse.Namespace) -> None:
             device=device,
             criterion=val_criterion,
         )
-        round_stats = [{"loss": s.loss, "macro_f1": s.score} for s in stats]
-        history.append({"train": round_stats, "val": {"loss": val.loss, "macro_f1": val.score}})
         pstr = f"{patience_left}" if patience > 0 else "off"
         summary = f"val_macro_f1: {val.score:.4f}  val_loss: {val.loss:.4f}  patience: {pstr}"
         last_summary = summary
@@ -610,7 +634,7 @@ def cmd_train_stage2(args: argparse.Namespace) -> None:
     best_server = server_pool.global_model()
     best_server.load_state_dict(best_server_sd)
     saved = _save_pair(args, client, best_server, "stage2")
-    print(json.dumps({"saved": saved, "history": history, "best_round": best_round, "best_val_macro_f1": best_score}, indent=2))
+    _print_saved_pair_summary(saved, best_round=best_round, best_score=best_score)
 
 
 def _predict_stage2_positive_probs(client, server, loader, device):
