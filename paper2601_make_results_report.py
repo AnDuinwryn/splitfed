@@ -29,7 +29,7 @@ class MetricRow:
     notes: str = ""
 
 
-def _safe_load_json(path: Path) -> Optional[dict[str, Any]]:
+def _safe_load_json(path: Path) -> Optional[Any]:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
@@ -93,7 +93,51 @@ def _cm_text(cm: Optional[list[list[int]]]) -> str:
     return f"[{cm[0][0]} {cm[0][1]}; {cm[1][0]} {cm[1][1]}]"
 
 
+def _parse_cm(value: Any) -> Optional[list[list[int]]]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        nums = []
+        token = ""
+        for ch in value:
+            if ch.isdigit() or ch == "-":
+                token += ch
+            elif token:
+                nums.append(int(token))
+                token = ""
+        if token:
+            nums.append(int(token))
+        if len(nums) >= 4:
+            return [[nums[0], nums[1]], [nums[2], nums[3]]]
+        return None
+    try:
+        return [[int(value[0][0]), int(value[0][1])], [int(value[1][0]), int(value[1][1])]]
+    except Exception:
+        return None
+
+
+def _float_from(row: dict[str, Any], *keys: str) -> Optional[float]:
+    for key in keys:
+        if row.get(key) is not None:
+            try:
+                return float(row[key])
+            except Exception:
+                return None
+    return None
+
+
+def _norm_dataset_label(value: Any) -> Optional[str]:
+    text = str(value).lower().strip()
+    if text in {"chinese", "eent", "chinese-test"}:
+        return "EENT"
+    if text in {"german", "svd", "german-test"}:
+        return "SVD"
+    return None
+
+
 def _dataset_blocks(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
     if isinstance(payload.get("evaluation"), dict):
         return payload["evaluation"]
     if isinstance(payload.get("datasets"), dict):
@@ -226,9 +270,60 @@ def discover_result_files(root: Path) -> list[Path]:
     return sorted(files)
 
 
+def _extract_list_rows(path: Path, payload: list[Any], root: Path) -> list[MetricRow]:
+    rows: list[MetricRow] = []
+    for entry in payload:
+        if not isinstance(entry, dict):
+            continue
+        dataset = _norm_dataset_label(entry.get("dataset") or entry.get("dataset_name"))
+        if dataset is None:
+            continue
+        static_group = (
+            entry.get("static")
+            or entry.get("static_group")
+            or entry.get("feature_group")
+            or entry.get("preset")
+            or path.parent.name
+        )
+        local = entry.get("local") or entry.get("variant") or entry.get("local_epochs") or entry.get("n_local_epochs")
+        scaling = entry.get("scaling") or entry.get("scale") or entry.get("static_scaling_policy")
+        result_bits = [str(static_group)]
+        if local is not None:
+            result_bits.append(str(local))
+        if scaling is not None:
+            result_bits.append(str(scaling))
+        protocol_bits = ["Youden/best_threshold" if "youden" in path.name.lower() else "summary"]
+        if scaling is not None:
+            protocol_bits.append(str(scaling))
+        row = MetricRow(
+            result_id=" | ".join(result_bits),
+            group=_group_for(path),
+            protocol=" + ".join(protocol_bits),
+            dataset=dataset,
+            accuracy=_float_from(entry, "acc", "accuracy"),
+            precision=_float_from(entry, "precision", "prec"),
+            recall=_float_from(entry, "sens", "sensitivity", "recall"),
+            specificity=_float_from(entry, "spec", "specificity"),
+            f1=_float_from(entry, "f1", "f1_score"),
+            auc=_float_from(entry, "auc", "roc_auc"),
+            cm=_parse_cm(entry.get("CM") or entry.get("cm") or entry.get("confusion_matrix")),
+            source_file=_short_path(path, root),
+        )
+        row.notes = _notes(row)
+        rows.append(row)
+    if not rows:
+        print(f"[skip] unsupported top-level JSON list: {_short_path(path, root)}")
+    return rows
+
+
 def extract_rows(path: Path, root: Path) -> list[MetricRow]:
     payload = _safe_load_json(path)
     if payload is None:
+        return []
+    if isinstance(payload, list):
+        return _extract_list_rows(path, payload, root)
+    if not isinstance(payload, dict):
+        print(f"[skip] unsupported top-level JSON type {type(payload).__name__}: {_short_path(path, root)}")
         return []
     blocks = _dataset_blocks(payload)
     result_id = _result_id(path, payload, root)
