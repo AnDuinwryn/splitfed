@@ -12,6 +12,8 @@ paper2601_splitmae_runs*/
 paper2601_local_artifacts/
 .paper2601_pydeps/
 paper2601_static_131_features*/
+paper2601_results_report.html
+paper2601_results_report.tsv
 Preproc/
 
 *.xlsx
