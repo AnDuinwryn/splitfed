@@ -14,6 +14,10 @@ paper2601_local_artifacts/
 paper2601_static_131_features*/
 paper2601_results_report.html
 paper2601_results_report.tsv
+paper2601_domain_shift_report.html
+paper2601_domain_shift_report.json
+paper2601_static_domain_shift.tsv
+paper2601_patient_score_shift.tsv
 Preproc/
 
 *.xlsx
