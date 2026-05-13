@@ -211,12 +211,13 @@ def main() -> None:
     write_filtered_table(Path(args.static_feature_table), Path(args.out_table), selected)
     Path(args.out_json).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out_json).write_text(json.dumps(_json_ready(report), indent=2), encoding="utf-8")
-    print(f"Selected stable static features: {len(selected)} / {report['n_input_features']}")
-    print(f"Wrote filtered static table: {Path(args.out_table).resolve()}")
-    print(f"Wrote selection report: {Path(args.out_json).resolve()}")
-    print("Selected feature names:")
-    for name in selected:
-        print(f"- {name}")
+    if not args.quiet:
+        print(f"Selected stable static features: {len(selected)} / {report['n_input_features']}")
+        print(f"Wrote filtered static table: {Path(args.out_table).resolve()}")
+        print(f"Wrote selection report: {Path(args.out_json).resolve()}")
+        print("Selected feature names:")
+        for name in selected:
+            print(f"- {name}")
 
 
 if __name__ == "__main__":

@@ -34,7 +34,6 @@ DEFAULT_MODELS = [
     "split_ast_static_only_all131",
     "split_ast_all131_gated_clip",
     "split_ast_pathology22_gated_clip",
-    "split_ast_stable_static_gated_clip",
 ]
 
 
