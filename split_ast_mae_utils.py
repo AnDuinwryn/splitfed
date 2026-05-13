@@ -205,7 +205,7 @@ def content_aware_mask(
     patches: Tensor,
     mask_ratio: float = 0.75,
 ) -> tuple[Tensor, Tensor, Tensor]:
-    """Paper-style content-aware masking based on per-patch variance.
+    """Content-aware masking based on per-patch variance.
 
     The method ranks patches by variance, builds a high-information candidate
     pool of size `max(70% * N_mask, 50% * N_total)`, samples 70% of masked

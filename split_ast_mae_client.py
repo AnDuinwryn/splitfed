@@ -6,8 +6,8 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from paper2601_standard_ast import StandardASTConfig, StandardASTBackbone
-from paper2601_splitmae_utils import (
+from split_ast_standard_ast import StandardASTConfig, StandardASTBackbone
+from split_ast_mae_utils import (
     PatchGrid,
     SmashedData,
     crop_or_pad_b1ft,
@@ -36,7 +36,7 @@ class SplitMAEClientConfig:
     audioset_checkpoint_path: Optional[str] = None
 
 
-class Paper2601SplitMAEClient(nn.Module):
+class SplitASTMAEClient(nn.Module):
     """Client-side split AST for Stage 1 MAE and Stage 2 classification.
 
     Responsibilities:
@@ -171,7 +171,7 @@ class Paper2601SplitMAEClient(nn.Module):
         )
 
 
-def build_paper2601_client(
+def build_split_ast_client(
     *,
     input_fdim: int = 128,
     input_tdim: int = 259,
@@ -182,8 +182,8 @@ def build_paper2601_client(
     normalize_input: bool = True,
     imagenet_pretrain: bool = False,
     audioset_checkpoint_path: Optional[str] = None,
-) -> Paper2601SplitMAEClient:
-    return Paper2601SplitMAEClient(
+) -> SplitASTMAEClient:
+    return SplitASTMAEClient(
         SplitMAEClientConfig(
             input_fdim=input_fdim,
             input_tdim=input_tdim,

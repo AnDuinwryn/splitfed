@@ -542,7 +542,7 @@ def write_npz(path: Path, aggregate: list[dict[str, object]], feature_names: lis
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="Extract Paper2601-style 131D static features from raw audio on Windows/Linux."
+        description="Extract SplitAST-MAE-style 131D static features from raw audio on Windows/Linux."
     )
     src = p.add_mutually_exclusive_group()
     src.add_argument(
@@ -571,11 +571,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("Data"),
         help="Rewrite old absolute manifest paths by replacing their Data/... suffix with this root.",
     )
-    p.add_argument("--output-dir", type=Path, default=Path("paper2601_static_131_features"))
-    p.add_argument("--file-csv", type=str, default="paper2601_static_131_file_level.csv")
-    p.add_argument("--aggregate-csv", type=str, default="paper2601_static_131_by_patient_vowel.csv")
-    p.add_argument("--aggregate-npz", type=str, default="paper2601_static_131_by_patient_vowel.npz")
-    p.add_argument("--metadata-json", type=str, default="paper2601_static_131_metadata.json")
+    p.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("split_ast_local_artifacts/split_ast_static_131_features"),
+    )
+    p.add_argument("--file-csv", type=str, default="split_ast_static_131_file_level.csv")
+    p.add_argument("--aggregate-csv", type=str, default="split_ast_static_131_by_patient_vowel.csv")
+    p.add_argument("--aggregate-npz", type=str, default="split_ast_static_131_by_patient_vowel.npz")
+    p.add_argument("--metadata-json", type=str, default="split_ast_static_131_metadata.json")
     p.add_argument("--pitch-floor", type=float, default=75.0)
     p.add_argument("--pitch-ceiling", type=float, default=600.0)
     p.add_argument("--limit", type=int, default=None, help="Debug: only process first N files.")

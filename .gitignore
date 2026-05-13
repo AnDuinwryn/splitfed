@@ -7,21 +7,22 @@ metadata/subjects/
 pretrained_models/
 
 saved_models/
-paper2601_splitmae_runs/
-paper2601_splitmae_runs*/
-paper2601_local_artifacts/
-.paper2601_pydeps/
-paper2601_static_131_features*/
-paper2601_results_report.html
-paper2601_results_report.tsv
-paper2601_domain_shift_report.html
-paper2601_domain_shift_report.json
-paper2601_static_domain_shift.tsv
-paper2601_patient_score_shift.tsv
-paper2601_stable_static_domain_shift_report.html
-paper2601_stable_static_domain_shift_report.json
-paper2601_stable_static_domain_shift.tsv
-paper2601_stable_static_patient_score_shift.tsv
+outputs/final_pipeline*/
+split_ast_mae_runs/
+split_ast_mae_runs*/
+split_ast_local_artifacts/
+.split_ast_pydeps/
+split_ast_static_131_features*/
+split_ast_results_report.html
+split_ast_results_report.tsv
+split_ast_domain_shift_report.html
+split_ast_domain_shift_report.json
+split_ast_static_domain_shift.tsv
+split_ast_patient_score_shift.tsv
+split_ast_stable_static_domain_shift_report.html
+split_ast_stable_static_domain_shift_report.json
+split_ast_stable_static_domain_shift.tsv
+split_ast_stable_static_patient_score_shift.tsv
 Preproc/
 
 *.xlsx

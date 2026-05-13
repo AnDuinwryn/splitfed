@@ -66,7 +66,7 @@ def _conv_hw(input_fdim: int, input_tdim: int, patch_size: tuple[int, int]) -> t
     pf, pt = int(patch_size[0]), int(patch_size[1])
     if int(input_fdim) % pf or int(input_tdim) % pt:
         raise ValueError(
-            "Paper 2601 Stage 1 uses non-overlapping 16x16 patches; "
+            "SplitAST-MAE Stage 1 uses non-overlapping 16x16 patches; "
             f"input_fdim/input_tdim must be divisible by patch_size, got "
             f"{input_fdim=} {input_tdim=} {patch_size=}"
         )

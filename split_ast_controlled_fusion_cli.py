@@ -13,10 +13,10 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from paper2601_splitmae_cli import (
-    PAPER_FOCAL_GAMMA,
-    PAPER_STAGE2_EARLY_STOPPING_PATIENCE,
-    PROJECT_STAGE2_MAX_ROUNDS,
+from split_ast_mae_cli import (
+    SPLIT_AST_FOCAL_GAMMA,
+    SPLIT_AST_STAGE2_EARLY_STOPPING_PATIENCE,
+    DEFAULT_STAGE2_MAX_ROUNDS,
     _add_data_args,
     _add_model_args,
     _add_pair_eval_args,
@@ -36,13 +36,13 @@ from paper2601_splitmae_cli import (
     _stage2_eval_loader,
     _static_config_from_args,
 )
-from paper2601_splitmae_training import (
+from split_ast_mae_training import (
     BinaryFocalWithLogitsLoss,
-    Paper2601SplitServerPool,
+    SplitASTServerPool,
     evaluate_stage2,
     run_stage2_splitfed_round,
 )
-from paper2601_static_features import (
+from split_ast_static_features import (
     StaticFeatureInfo,
     apply_static_normalizer,
     compute_static_features,
@@ -287,12 +287,12 @@ def _freeze_audio_stack(client, server) -> None:
 
 
 def _build_controlled_pair(args: argparse.Namespace):
-    from paper2601_splitmae_client import Paper2601SplitMAEClient, SplitMAEClientConfig
-    from paper2601_splitmae_server import Paper2601SplitMAEServer, SplitMAEServerConfig
+    from split_ast_mae_client import SplitASTMAEClient, SplitMAEClientConfig
+    from split_ast_mae_server import SplitASTMAEServer, SplitMAEServerConfig
 
     device = _device(args)
     torch.manual_seed(int(args.model_init_seed))
-    client = Paper2601SplitMAEClient(
+    client = SplitASTMAEClient(
         SplitMAEClientConfig(
             input_fdim=int(args.input_fdim),
             input_tdim=int(args.input_tdim),
@@ -305,7 +305,7 @@ def _build_controlled_pair(args: argparse.Namespace):
         )
     )
     torch.manual_seed(int(args.model_init_seed))
-    server = Paper2601SplitMAEServer(
+    server = SplitASTMAEServer(
         SplitMAEServerConfig(
             input_fdim=int(args.input_fdim),
             input_tdim=int(args.input_tdim),
@@ -397,7 +397,7 @@ def cmd_train_stage2_controlled(args: argparse.Namespace) -> None:
     pack, _ = _build_controlled_loaders(args)
     client, server, device = _build_controlled_pair(args)
     optimizer_betas = (float(args.adamw_beta1), float(args.adamw_beta2))
-    server_pool = Paper2601SplitServerPool(
+    server_pool = SplitASTServerPool(
         server_template=server,
         n_partitions=int(args.n_partitions),
         server_lr=float(args.server_lr),
@@ -623,7 +623,7 @@ def cmd_evaluate_stage2_pair_controlled(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Controlled fusion CLI for Paper2601 Stage 2 ablations.")
+    p = argparse.ArgumentParser(description="Controlled fusion CLI for SplitAST-MAE Stage 2 ablations.")
     sub = p.add_subparsers(dest="command", required=True)
 
     train_p = sub.add_parser("train-stage2-controlled", help="Run controlled Stage 2 split fine-tuning.")
@@ -631,7 +631,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_model_args(train_p)
     _add_train_args(
         train_p,
-        default_rounds=PROJECT_STAGE2_MAX_ROUNDS,
+        default_rounds=DEFAULT_STAGE2_MAX_ROUNDS,
         default_local_epochs=5,
         include_early_stopping=True,
         include_focal=True,

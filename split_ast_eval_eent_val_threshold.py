@@ -18,8 +18,8 @@ from sklearn.metrics import (
     roc_curve,
 )
 
-from paper2601_splitmae_cli import (
-    PAPER_FOCAL_GAMMA,
+from split_ast_mae_cli import (
+    SPLIT_AST_FOCAL_GAMMA,
     _add_data_args,
     _add_model_args,
     _args_from_metadata,
@@ -44,7 +44,7 @@ def _metadata_is_controlled(meta: dict[str, Any]) -> bool:
 def _args_from_any_metadata(base_args: argparse.Namespace, metadata_path: Path):
     meta = json.loads(Path(metadata_path).read_text(encoding="utf-8"))
     if _metadata_is_controlled(meta):
-        from paper2601_controlled_fusion_cli import _args_from_controlled_metadata
+        from split_ast_controlled_fusion_cli import _args_from_controlled_metadata
 
         return _args_from_controlled_metadata(base_args, metadata_path)
     return _args_from_metadata(base_args, metadata_path)
@@ -52,7 +52,7 @@ def _args_from_any_metadata(base_args: argparse.Namespace, metadata_path: Path):
 
 def _build_any_pair(args: argparse.Namespace, meta: dict[str, Any]):
     if _metadata_is_controlled(meta):
-        from paper2601_controlled_fusion_cli import _build_controlled_pair
+        from split_ast_controlled_fusion_cli import _build_controlled_pair
 
         return _build_controlled_pair(args)
     return _build_pair(args)
@@ -67,7 +67,7 @@ def _eval_any_static_features(
     vowel: str,
 ):
     if _metadata_is_controlled(meta):
-        from paper2601_controlled_fusion_cli import _eval_static_features_controlled
+        from split_ast_controlled_fusion_cli import _eval_static_features_controlled
 
         return _eval_static_features_controlled(args_for_vowel, meta, x, patient_ids, dataset_name, vowel)
     return _eval_static_features(args_for_vowel, meta, x, patient_ids, dataset_name, vowel)
@@ -334,7 +334,7 @@ def cmd_eval(args: argparse.Namespace) -> None:
         "patient_eval_strategy": "eent_validation_threshold",
         "threshold_metric": str(args.threshold_metric),
         "patient_prob_threshold": threshold,
-        "focal_gamma": float(meta_a.get("stage2_focal_gamma") or PAPER_FOCAL_GAMMA),
+        "focal_gamma": float(meta_a.get("stage2_focal_gamma") or SPLIT_AST_FOCAL_GAMMA),
         "loaded_metadata_a": meta_a,
         "loaded_metadata_i": meta_i,
         "calibration": calibration,
@@ -377,7 +377,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description=(
             "Select a patient-level probability threshold on EENT validation, then evaluate "
-            "saved Paper2601 /a/+/i/ Stage 2 models on EENT test and/or SVD with that fixed threshold."
+            "saved SplitAST-MAE /a/+/i/ Stage 2 models on EENT test and/or SVD with that fixed threshold."
         )
     )
     _add_data_args(p)
@@ -388,7 +388,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--eval-dataset", choices=["chinese", "german", "both"], default="both")
     p.add_argument("--threshold-metric", choices=["macro_f1", "f1", "accuracy", "youden"], default="macro_f1")
     p.add_argument("--results-json", type=Path, default=None)
-    p.add_argument("--focal-gamma", type=float, default=PAPER_FOCAL_GAMMA)
+    p.add_argument("--focal-gamma", type=float, default=SPLIT_AST_FOCAL_GAMMA)
     p.add_argument("--verbose", action="store_true")
     p.set_defaults(func=cmd_eval)
     return p

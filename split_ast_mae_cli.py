@@ -8,13 +8,13 @@ from pathlib import Path
 from typing import Any, Optional
 
 
-PAPER_ADAMW_BETAS = (0.9, 0.95)
-PAPER_WEIGHT_DECAY = 0.05
-PAPER_FOCAL_GAMMA = 2.0
-PAPER_STAGE1_REFERENCE_EPOCHS = 120
-PROJECT_STAGE1_MAX_ROUNDS = 120
-PROJECT_STAGE2_MAX_ROUNDS = 250
-PAPER_STAGE2_EARLY_STOPPING_PATIENCE = 10
+SPLIT_AST_ADAMW_BETAS = (0.9, 0.95)
+SPLIT_AST_WEIGHT_DECAY = 0.05
+SPLIT_AST_FOCAL_GAMMA = 2.0
+SPLIT_AST_STAGE1_REFERENCE_EPOCHS = 120
+DEFAULT_STAGE1_MAX_ROUNDS = 120
+DEFAULT_STAGE2_MAX_ROUNDS = 250
+SPLIT_AST_STAGE2_EARLY_STOPPING_PATIENCE = 10
 
 
 def _positive_int(value: str) -> int:
@@ -88,15 +88,15 @@ def _add_train_args(
     p.add_argument("--n-local-epochs", type=_positive_int, default=int(default_local_epochs))
     p.add_argument("--client-lr", type=float, default=1.5e-4)
     p.add_argument("--server-lr", type=float, default=1.5e-4)
-    p.add_argument("--adamw-beta1", type=float, default=PAPER_ADAMW_BETAS[0])
-    p.add_argument("--adamw-beta2", type=float, default=PAPER_ADAMW_BETAS[1])
-    p.add_argument("--weight-decay", type=float, default=PAPER_WEIGHT_DECAY)
+    p.add_argument("--adamw-beta1", type=float, default=SPLIT_AST_ADAMW_BETAS[0])
+    p.add_argument("--adamw-beta2", type=float, default=SPLIT_AST_ADAMW_BETAS[1])
+    p.add_argument("--weight-decay", type=float, default=SPLIT_AST_WEIGHT_DECAY)
     if include_focal:
-        p.add_argument("--focal-gamma", type=float, default=PAPER_FOCAL_GAMMA)
+        p.add_argument("--focal-gamma", type=float, default=SPLIT_AST_FOCAL_GAMMA)
         p.add_argument("--focal-alpha", type=float, default=None)
     if include_early_stopping:
-        p.add_argument("--early-stopping-patience", type=int, default=PAPER_STAGE2_EARLY_STOPPING_PATIENCE)
-    p.add_argument("--save-dir", type=Path, default=Path("paper2601_splitmae_runs"))
+        p.add_argument("--early-stopping-patience", type=int, default=SPLIT_AST_STAGE2_EARLY_STOPPING_PATIENCE)
+    p.add_argument("--save-dir", type=Path, default=Path("split_ast_mae_runs"))
     p.add_argument("--run-name", type=str, default=None)
     p.add_argument("--load-client", type=Path, default=None)
     p.add_argument("--load-server", type=Path, default=None)
@@ -112,7 +112,7 @@ def _add_pair_eval_args(p: argparse.ArgumentParser) -> None:
         default="fixed",
     )
     p.add_argument("--patient-prob-threshold", type=float, default=0.5)
-    p.add_argument("--focal-gamma", type=float, default=PAPER_FOCAL_GAMMA)
+    p.add_argument("--focal-gamma", type=float, default=SPLIT_AST_FOCAL_GAMMA)
     p.add_argument(
         "--results-json",
         type=Path,
@@ -192,13 +192,13 @@ def _make_context(args: argparse.Namespace) -> Any:
         paths=paths,
         splits=SplitSeeds(dev_test_seed=int(args.dev_test_seed), train_val_seed=int(args.train_val_seed)),
         train=train_cfg,
-        save_dir=getattr(args, "save_dir", Path("paper2601_splitmae_runs")),
+        save_dir=getattr(args, "save_dir", Path("split_ast_mae_runs")),
         device=args.device,
     )
 
 
 def _static_config_from_args(args: argparse.Namespace):
-    from paper2601_static_features import StaticFeatureConfig
+    from split_ast_static_features import StaticFeatureConfig
 
     return StaticFeatureConfig(
         source=str(getattr(args, "static_feature_source", "none")),
@@ -215,7 +215,7 @@ def _build_loaders(args: argparse.Namespace, *, include_static: bool = False):
 
     ctx = _make_context(args)
     if include_static and str(getattr(args, "static_feature_source", "none")).lower().strip() != "none":
-        from paper2601_static_features import build_static_ssast_partition_loaders
+        from split_ast_static_features import build_static_ssast_partition_loaders
 
         pack, info = build_static_ssast_partition_loaders(
             ctx=ctx,
@@ -284,12 +284,12 @@ def _load_matching_state_dict(module, path: Path, *, label: str) -> None:
 
 def _build_pair(args: argparse.Namespace):
     torch = _load_torch()
-    from paper2601_splitmae_client import Paper2601SplitMAEClient, SplitMAEClientConfig
-    from paper2601_splitmae_server import Paper2601SplitMAEServer, SplitMAEServerConfig
+    from split_ast_mae_client import SplitASTMAEClient, SplitMAEClientConfig
+    from split_ast_mae_server import SplitASTMAEServer, SplitMAEServerConfig
 
     device = _device(args)
     torch.manual_seed(int(args.model_init_seed))
-    client = Paper2601SplitMAEClient(
+    client = SplitASTMAEClient(
         SplitMAEClientConfig(
             input_fdim=int(args.input_fdim),
             input_tdim=int(args.input_tdim),
@@ -302,7 +302,7 @@ def _build_pair(args: argparse.Namespace):
         )
     )
     torch.manual_seed(int(args.model_init_seed))
-    server = Paper2601SplitMAEServer(
+    server = SplitASTMAEServer(
         SplitMAEServerConfig(
             input_fdim=int(args.input_fdim),
             input_tdim=int(args.input_tdim),
@@ -374,7 +374,7 @@ def _save_pair(args: argparse.Namespace, client, server, stage: str) -> dict[str
         "server_lr": float(args.server_lr),
         "n_global_rounds": int(args.n_global_rounds),
         "n_local_epochs": int(args.n_local_epochs),
-        "stage1_reference_epochs": PAPER_STAGE1_REFERENCE_EPOCHS if stage == "stage1" else None,
+        "stage1_reference_epochs": SPLIT_AST_STAGE1_REFERENCE_EPOCHS if stage == "stage1" else None,
         "stage2_loss": "BinaryFocalWithLogitsLoss" if stage == "stage2" else None,
         "stage2_focal_gamma": getattr(args, "focal_gamma", None),
         "stage2_focal_alpha": getattr(args, "focal_alpha", None),
@@ -491,21 +491,14 @@ def cmd_inspect(args: argparse.Namespace) -> None:
     )
 
 
-def cmd_smoke(args: argparse.Namespace) -> None:
-    _set_run_seed(7)
-    import paper2601_splitmae_smoke
-
-    paper2601_splitmae_smoke.main()
-
-
 def cmd_train_stage1(args: argparse.Namespace) -> None:
-    from paper2601_splitmae_training import Paper2601SplitServerPool, run_stage1_splitfed_round
+    from split_ast_mae_training import SplitASTServerPool, run_stage1_splitfed_round
 
     _set_run_seed(int(args.model_init_seed))
     pack = _build_loaders(args, include_static=False)
     client, server, device = _build_pair(args)
     optimizer_betas = (float(args.adamw_beta1), float(args.adamw_beta2))
-    server_pool = Paper2601SplitServerPool(
+    server_pool = SplitASTServerPool(
         server_template=server,
         n_partitions=int(args.n_partitions),
         server_lr=float(args.server_lr),
@@ -550,9 +543,9 @@ def cmd_train_stage1(args: argparse.Namespace) -> None:
 
 
 def cmd_train_stage2(args: argparse.Namespace) -> None:
-    from paper2601_splitmae_training import (
+    from split_ast_mae_training import (
         BinaryFocalWithLogitsLoss,
-        Paper2601SplitServerPool,
+        SplitASTServerPool,
         evaluate_stage2,
         run_stage2_splitfed_round,
     )
@@ -561,7 +554,7 @@ def cmd_train_stage2(args: argparse.Namespace) -> None:
     pack = _build_loaders(args, include_static=True)
     client, server, device = _build_pair(args)
     optimizer_betas = (float(args.adamw_beta1), float(args.adamw_beta2))
-    server_pool = Paper2601SplitServerPool(
+    server_pool = SplitASTServerPool(
         server_template=server,
         n_partitions=int(args.n_partitions),
         server_lr=float(args.server_lr),
@@ -658,7 +651,7 @@ def _predict_stage2_positive_probs(client, server, loader, device):
 def _stage2_eval_loader(x, y, input_tdim: int, batch_size: int, static_features=None):
     from torch.utils.data import DataLoader
 
-    from paper2601_static_features import SsastMelStaticDataset
+    from split_ast_static_features import SsastMelStaticDataset
     from voice_disorder_torch.data.datasets import SsastMelDataset
 
     if static_features is None:
@@ -686,7 +679,7 @@ def _eval_static_features(args_for_vowel: argparse.Namespace, meta: dict, x, pat
     dim = int(meta.get("static_feature_dim") or getattr(args_for_vowel, "static_feature_dim", 0) or 0)
     if dim <= 0:
         return None
-    from paper2601_static_features import apply_static_normalizer, compute_static_features
+    from split_ast_static_features import apply_static_normalizer, compute_static_features
 
     backend = meta.get("static_feature_backend") or getattr(args_for_vowel, "static_feature_source", "none")
     raw, names, resolved = compute_static_features(
@@ -709,7 +702,7 @@ def _eval_static_features(args_for_vowel: argparse.Namespace, meta: dict, x, pat
 
 
 def cmd_evaluate_stage2_pair(args: argparse.Namespace) -> None:
-    from paper2601_splitmae_training import BinaryFocalWithLogitsLoss, evaluate_stage2
+    from split_ast_mae_training import BinaryFocalWithLogitsLoss, evaluate_stage2
     from voice_disorder_torch.data.load import load_all_preprocessed
     from voice_disorder_torch.evaluation.patient_eval import combined_vowel_ai_eval, model_eval_by_id
     from voice_disorder_torch.io.eval_report import save_eval_json
@@ -833,20 +826,17 @@ def cmd_evaluate_stage2_pair(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Isolated CLI for the Paper 2601 Split-MAE experiment.")
+    p = argparse.ArgumentParser(description="CLI for the SplitAST-MAE experiment.")
     sub = p.add_subparsers(dest="command", required=True)
 
     inspect_p = sub.add_parser("inspect", help="Print split payload shapes using synthetic tensors.")
     _add_model_args(inspect_p)
     inspect_p.set_defaults(func=cmd_inspect)
 
-    smoke_p = sub.add_parser("smoke", help="Run the tiny synthetic smoke script.")
-    smoke_p.set_defaults(func=cmd_smoke)
-
     stage1_p = sub.add_parser("train-stage1", help="Run Stage 1 domain-adaptive MAE split training.")
     _add_data_args(stage1_p)
     _add_model_args(stage1_p)
-    _add_train_args(stage1_p, default_rounds=PROJECT_STAGE1_MAX_ROUNDS, default_local_epochs=5)
+    _add_train_args(stage1_p, default_rounds=DEFAULT_STAGE1_MAX_ROUNDS, default_local_epochs=5)
     stage1_p.set_defaults(func=cmd_train_stage1)
 
     stage2_p = sub.add_parser("train-stage2", help="Run Stage 2 Attention-FFNN split fine-tuning.")
@@ -854,7 +844,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_model_args(stage2_p)
     _add_train_args(
         stage2_p,
-        default_rounds=PROJECT_STAGE2_MAX_ROUNDS,
+        default_rounds=DEFAULT_STAGE2_MAX_ROUNDS,
         default_local_epochs=5,
         include_early_stopping=True,
         include_focal=True,

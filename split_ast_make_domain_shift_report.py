@@ -12,23 +12,23 @@ import numpy as np
 
 
 DEFAULT_STATIC_TABLE = Path(
-    "paper2601_local_artifacts/paper2601_static_131_features/paper2601_static_131_by_patient_vowel.csv"
+    "split_ast_local_artifacts/split_ast_static_131_features/split_ast_static_131_by_patient_vowel.csv"
 )
 DEFAULT_PRESETS = ["all", "pathology", "pathology_source_tilt", "pathology_voicing"]
 DEFAULT_RUN_DIR_NAMES = [
-    "paper2601_splitmae_runs_local5",
-    "paper2601_splitmae_runs_local1",
-    "paper2601_splitmae_runs_control_all131_gated_clip_local5",
-    "paper2601_splitmae_runs_control_static_only_all131_local5",
-    "paper2601_splitmae_runs_control_mae_only_local5",
-    "paper2601_splitmae_runs_control_pathology22_gated_clip_local5",
-    "paper2601_splitmae_runs_control_source_tilt_gated_clip_local5",
-    "paper2601_splitmae_runs_ablation_pathology22_local5",
-    "paper2601_splitmae_runs_ablation_pathology22_local1",
-    "paper2601_splitmae_runs_ablation_pathology_source_tilt_local5",
-    "paper2601_splitmae_runs_ablation_pathology_source_tilt_local1",
-    "paper2601_splitmae_runs_ablation_pathology_voicing_local5",
-    "paper2601_splitmae_runs_ablation_pathology_voicing_local1",
+    "split_ast_mae_runs_local5",
+    "split_ast_mae_runs_local1",
+    "split_ast_mae_runs_control_all131_gated_clip_local5",
+    "split_ast_mae_runs_control_static_only_all131_local5",
+    "split_ast_mae_runs_control_mae_only_local5",
+    "split_ast_mae_runs_control_pathology22_gated_clip_local5",
+    "split_ast_mae_runs_control_source_tilt_gated_clip_local5",
+    "split_ast_mae_runs_ablation_pathology22_local5",
+    "split_ast_mae_runs_ablation_pathology22_local1",
+    "split_ast_mae_runs_ablation_pathology_source_tilt_local5",
+    "split_ast_mae_runs_ablation_pathology_source_tilt_local1",
+    "split_ast_mae_runs_ablation_pathology_voicing_local5",
+    "split_ast_mae_runs_ablation_pathology_voicing_local1",
 ]
 
 
@@ -163,7 +163,7 @@ def _dataset_name_for_split(split_name: str) -> str:
 
 
 def _static_features_for_split(args: argparse.Namespace, bundle, *, split_name: str, vowel: str, preset: str):
-    from paper2601_static_features import StaticFeatureConfig, compute_static_features
+    from split_ast_static_features import StaticFeatureConfig, compute_static_features
 
     source = str(args.static_feature_source).lower().strip()
     ids = _ids_for_split(bundle, split_name, vowel)
@@ -273,7 +273,7 @@ def _discover_run_dirs(root: Path, explicit: Optional[list[Path]]) -> list[Path]
         for base in (root, root / "saved_models"):
             for name in DEFAULT_RUN_DIR_NAMES:
                 candidates.append(base / name)
-            candidates.extend(sorted(base.glob("paper2601_splitmae_runs*")) if base.is_dir() else [])
+            candidates.extend(sorted(base.glob("split_ast_mae_runs*")) if base.is_dir() else [])
     out: list[Path] = []
     seen: set[str] = set()
     for path in candidates:
@@ -309,7 +309,7 @@ def _threshold_from_run_dir(run_dir: Path, metric: str) -> tuple[float, str]:
 
 def _run_display_name(run_dir: Path) -> str:
     name = run_dir.name
-    prefix = "paper2601_splitmae_runs_"
+    prefix = "split_ast_mae_runs_"
     return name[len(prefix) :] if name.startswith(prefix) else name
 
 
@@ -351,13 +351,13 @@ def _score_quantile_row(
 
 
 def _prediction_rows_for_run(args: argparse.Namespace, bundle, run_dir: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    from paper2601_eval_eent_val_threshold import (
+    from split_ast_eval_eent_val_threshold import (
         _aggregate_patient_scores,
         _args_from_any_metadata,
         _build_any_pair,
         _predict_for_arrays,
     )
-    from paper2601_splitmae_cli import _eval_arrays_for_dataset, _set_run_seed
+    from split_ast_mae_cli import _eval_arrays_for_dataset, _set_run_seed
 
     metadata_a = run_dir / "ast_stage2_a_metadata.json"
     metadata_i = run_dir / "ast_stage2_i_metadata.json"
@@ -548,7 +548,7 @@ def _box_svg(groups: list[dict[str, Any]], threshold: float) -> str:
 
 def _score_section(score_rows: list[dict[str, Any]]) -> str:
     if not score_rows:
-        return "<p>No compatible Paper2601 run directories with Stage 2 metadata were found.</p>"
+        return "<p>No compatible SplitAST-MAE run directories with Stage 2 metadata were found.</p>"
     by_run: dict[str, list[dict[str, Any]]] = {}
     for row in score_rows:
         by_run.setdefault(str(row["run"]), []).append(row)
@@ -644,11 +644,11 @@ def build_html(
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Paper2601 Domain Shift Report</title>
+<title>SplitAST-MAE Domain Shift Report</title>
 <style>{css}</style>
 </head>
 <body>
-<h1>Paper2601 Domain Shift Report</h1>
+<h1>SplitAST-MAE Domain Shift Report</h1>
 <p>
 Generated from <code>{html.escape(str(root))}</code>. Static report compares EENT train against SVD using
 EENT-train mean/std as the reference. Score report loads saved /a/ and /i/ Stage 2 pairs and plots patient-level
@@ -696,7 +696,7 @@ If this is large, SVD is far outside the distribution used to normalize static f
 
 
 def build_report(args: argparse.Namespace) -> None:
-    from paper2601_splitmae_cli import _make_context
+    from split_ast_mae_cli import _make_context
     from voice_disorder_torch.data.load import load_all_preprocessed
 
     root = Path.cwd()
@@ -782,11 +782,11 @@ def build_report(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    from paper2601_splitmae_cli import _add_data_args, _add_model_args
+    from split_ast_mae_cli import _add_data_args, _add_model_args
 
     p = argparse.ArgumentParser(
         description=(
-            "Build two diagnostics for Paper2601 cross-domain behavior: "
+            "Build two diagnostics for SplitAST-MAE cross-domain behavior: "
             "static-feature domain shift and patient-level score distributions."
         )
     )
@@ -799,10 +799,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--top-k", type=int, default=40)
     p.add_argument("--static-only", action="store_true", help="Only build the static-feature drift report.")
     p.add_argument("--quiet", action="store_true")
-    p.add_argument("--out-html", type=Path, default=Path("paper2601_domain_shift_report.html"))
-    p.add_argument("--out-json", type=Path, default=Path("paper2601_domain_shift_report.json"))
-    p.add_argument("--out-static-tsv", type=Path, default=Path("paper2601_static_domain_shift.tsv"))
-    p.add_argument("--out-score-tsv", type=Path, default=Path("paper2601_patient_score_shift.tsv"))
+    p.add_argument("--out-html", type=Path, default=Path("split_ast_domain_shift_report.html"))
+    p.add_argument("--out-json", type=Path, default=Path("split_ast_domain_shift_report.json"))
+    p.add_argument("--out-static-tsv", type=Path, default=Path("split_ast_static_domain_shift.tsv"))
+    p.add_argument("--out-score-tsv", type=Path, default=Path("split_ast_patient_score_shift.tsv"))
     return p
 
 

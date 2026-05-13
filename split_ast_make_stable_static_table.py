@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from paper2601_make_domain_shift_report import DEFAULT_STATIC_TABLE, build_static_shift_rows
+from split_ast_make_domain_shift_report import DEFAULT_STATIC_TABLE, build_static_shift_rows
 
 
 DEFAULT_EXCLUDE_PATTERNS = [
@@ -156,11 +156,11 @@ def write_filtered_table(source: Path, out_table: Path, selected_features: list[
 
 
 def build_parser() -> argparse.ArgumentParser:
-    from paper2601_splitmae_cli import _add_data_args, _add_model_args
+    from split_ast_mae_cli import _add_data_args, _add_model_args
 
     p = argparse.ArgumentParser(
         description=(
-            "Create a filtered Paper2601 static-feature table by dropping columns with strong "
+            "Create a filtered SplitAST-MAE static-feature table by dropping columns with strong "
             "EENT-train to SVD distribution shift."
         )
     )
@@ -189,19 +189,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--out-table",
         type=Path,
-        default=Path("paper2601_local_artifacts/paper2601_stable_static_features/paper2601_stable_static_by_patient_vowel.csv"),
+        default=Path("split_ast_local_artifacts/split_ast_stable_static_features/split_ast_stable_static_by_patient_vowel.csv"),
     )
     p.add_argument(
         "--out-json",
         type=Path,
-        default=Path("paper2601_local_artifacts/paper2601_stable_static_features/paper2601_stable_static_selection.json"),
+        default=Path("split_ast_local_artifacts/split_ast_stable_static_features/split_ast_stable_static_selection.json"),
     )
     p.add_argument("--quiet", action="store_true")
     return p
 
 
 def main() -> None:
-    from paper2601_splitmae_cli import _make_context
+    from split_ast_mae_cli import _make_context
     from voice_disorder_torch.data.load import load_all_preprocessed
 
     args = build_parser().parse_args()

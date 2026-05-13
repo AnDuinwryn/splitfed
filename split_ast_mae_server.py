@@ -6,8 +6,8 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from paper2601_standard_ast import StandardASTConfig, StandardASTBackbone
-from paper2601_splitmae_utils import (
+from split_ast_standard_ast import StandardASTConfig, StandardASTBackbone
+from split_ast_mae_utils import (
     SmashedData,
     gather_tokens,
     ma_error_loss,
@@ -174,8 +174,8 @@ class FeatureAttentionFFNN(nn.Module):
         return logits
 
 
-class Paper2601SplitMAEServer(nn.Module):
-    """Server-side model for the paper-inspired split MAE/classifier pipeline."""
+class SplitASTMAEServer(nn.Module):
+    """Server-side model for the SplitAST-MAE classifier pipeline."""
 
     def __init__(self, config: SplitMAEServerConfig = SplitMAEServerConfig()) -> None:
         super().__init__()
@@ -287,7 +287,7 @@ class Paper2601SplitMAEServer(nn.Module):
         raise ValueError(f"Unknown SmashedData mode: {smashed.mode}")
 
 
-def build_paper2601_server(
+def build_split_ast_server(
     *,
     input_fdim: int = 128,
     input_tdim: int = 259,
@@ -298,8 +298,8 @@ def build_paper2601_server(
     pooling: str = "cls",
     imagenet_pretrain: bool = False,
     audioset_checkpoint_path: Optional[str] = None,
-) -> Paper2601SplitMAEServer:
-    return Paper2601SplitMAEServer(
+) -> SplitASTMAEServer:
+    return SplitASTMAEServer(
         SplitMAEServerConfig(
             input_fdim=input_fdim,
             input_tdim=input_tdim,

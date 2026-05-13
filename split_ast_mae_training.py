@@ -10,14 +10,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from paper2601_splitmae_client import Paper2601SplitMAEClient
-from paper2601_splitmae_server import Paper2601SplitMAEServer
-from paper2601_splitmae_utils import SmashedData, average_state_dicts, labels_for_bce
+from split_ast_mae_client import SplitASTMAEClient
+from split_ast_mae_server import SplitASTMAEServer
+from split_ast_mae_utils import SmashedData, average_state_dicts, labels_for_bce
 
 
-PAPER_ADAMW_BETAS = (0.9, 0.95)
-PAPER_WEIGHT_DECAY = 0.05
-PAPER_FOCAL_GAMMA = 2.0
+SPLIT_AST_ADAMW_BETAS = (0.9, 0.95)
+SPLIT_AST_WEIGHT_DECAY = 0.05
+SPLIT_AST_FOCAL_GAMMA = 2.0
 
 
 @dataclass
@@ -60,9 +60,9 @@ def macro_f1_score(logits: torch.Tensor, labels: torch.Tensor) -> float:
 
 
 class BinaryFocalWithLogitsLoss(nn.Module):
-    """Multi-label focal loss over logits, matching the paper's Stage 2 loss family."""
+    """Multi-label focal loss over logits, matching the SplitAST-MAE Stage 2 loss family."""
 
-    def __init__(self, gamma: float = PAPER_FOCAL_GAMMA, alpha: Optional[float] = None) -> None:
+    def __init__(self, gamma: float = SPLIT_AST_FOCAL_GAMMA, alpha: Optional[float] = None) -> None:
         super().__init__()
         self.gamma = float(gamma)
         self.alpha = None if alpha is None else float(alpha)
@@ -79,19 +79,19 @@ class BinaryFocalWithLogitsLoss(nn.Module):
         return loss.mean()
 
 
-class Paper2601SplitServerPool:
+class SplitASTServerPool:
     """One server replica per client partition, matching the existing SplitFed style."""
 
     def __init__(
         self,
         *,
-        server_template: Paper2601SplitMAEServer,
+        server_template: SplitASTMAEServer,
         n_partitions: int,
         server_lr: float,
         device: torch.device | str,
         finetune_criterion: Optional[nn.Module] = None,
-        optimizer_betas: tuple[float, float] = PAPER_ADAMW_BETAS,
-        weight_decay: float = PAPER_WEIGHT_DECAY,
+        optimizer_betas: tuple[float, float] = SPLIT_AST_ADAMW_BETAS,
+        weight_decay: float = SPLIT_AST_WEIGHT_DECAY,
     ) -> None:
         self.device = torch.device(device)
         self.server_models = [copy.deepcopy(server_template).to(self.device) for _ in range(int(n_partitions))]
@@ -159,21 +159,21 @@ class Paper2601SplitServerPool:
                 weight_decay=self.weight_decay,
             )
 
-    def global_model(self) -> Paper2601SplitMAEServer:
+    def global_model(self) -> SplitASTMAEServer:
         return copy.deepcopy(self.server_models[0])
 
 
 def train_stage1_client_partition(
     *,
-    client_model: Paper2601SplitMAEClient,
+    client_model: SplitASTMAEClient,
     train_loader: DataLoader,
     partition_id: int,
     n_local_epochs: int,
     client_lr: float,
-    server_pool: Paper2601SplitServerPool,
+    server_pool: SplitASTServerPool,
     device: torch.device | str,
-    optimizer_betas: tuple[float, float] = PAPER_ADAMW_BETAS,
-    weight_decay: float = PAPER_WEIGHT_DECAY,
+    optimizer_betas: tuple[float, float] = SPLIT_AST_ADAMW_BETAS,
+    weight_decay: float = SPLIT_AST_WEIGHT_DECAY,
 ) -> tuple[dict, list[SplitStepStats]]:
     device = torch.device(device)
     client_model.to(device).train()
@@ -199,15 +199,15 @@ def train_stage1_client_partition(
 
 def train_stage2_client_partition(
     *,
-    client_model: Paper2601SplitMAEClient,
+    client_model: SplitASTMAEClient,
     train_loader: DataLoader,
     partition_id: int,
     n_local_epochs: int,
     client_lr: float,
-    server_pool: Paper2601SplitServerPool,
+    server_pool: SplitASTServerPool,
     device: torch.device | str,
-    optimizer_betas: tuple[float, float] = PAPER_ADAMW_BETAS,
-    weight_decay: float = PAPER_WEIGHT_DECAY,
+    optimizer_betas: tuple[float, float] = SPLIT_AST_ADAMW_BETAS,
+    weight_decay: float = SPLIT_AST_WEIGHT_DECAY,
 ) -> tuple[dict, list[SplitStepStats]]:
     device = torch.device(device)
     client_model.to(device).train()
@@ -245,15 +245,15 @@ def _mean_stats(stats: Iterable[SplitStepStats]) -> SplitStepStats:
 
 def run_stage1_splitfed_round(
     *,
-    client_base: Paper2601SplitMAEClient,
-    server_pool: Paper2601SplitServerPool,
+    client_base: SplitASTMAEClient,
+    server_pool: SplitASTServerPool,
     train_loaders: list[DataLoader],
     n_local_epochs: int,
     client_lr: float,
     device: torch.device | str,
     average_servers: bool = True,
-    optimizer_betas: tuple[float, float] = PAPER_ADAMW_BETAS,
-    weight_decay: float = PAPER_WEIGHT_DECAY,
+    optimizer_betas: tuple[float, float] = SPLIT_AST_ADAMW_BETAS,
+    weight_decay: float = SPLIT_AST_WEIGHT_DECAY,
     progress_fn: Optional[Callable[[int, SplitStepStats], None]] = None,
 ) -> list[SplitStepStats]:
     client_sds: list[dict] = []
@@ -284,15 +284,15 @@ def run_stage1_splitfed_round(
 
 def run_stage2_splitfed_round(
     *,
-    client_base: Paper2601SplitMAEClient,
-    server_pool: Paper2601SplitServerPool,
+    client_base: SplitASTMAEClient,
+    server_pool: SplitASTServerPool,
     train_loaders: list[DataLoader],
     n_local_epochs: int,
     client_lr: float,
     device: torch.device | str,
     average_servers: bool = True,
-    optimizer_betas: tuple[float, float] = PAPER_ADAMW_BETAS,
-    weight_decay: float = PAPER_WEIGHT_DECAY,
+    optimizer_betas: tuple[float, float] = SPLIT_AST_ADAMW_BETAS,
+    weight_decay: float = SPLIT_AST_WEIGHT_DECAY,
     progress_fn: Optional[Callable[[int, SplitStepStats], None]] = None,
 ) -> list[SplitStepStats]:
     client_sds: list[dict] = []
@@ -324,8 +324,8 @@ def run_stage2_splitfed_round(
 @torch.no_grad()
 def evaluate_stage2(
     *,
-    client: Paper2601SplitMAEClient,
-    server: Paper2601SplitMAEServer,
+    client: SplitASTMAEClient,
+    server: SplitASTMAEServer,
     loader: DataLoader,
     device: torch.device | str,
     criterion: Optional[nn.Module] = None,
