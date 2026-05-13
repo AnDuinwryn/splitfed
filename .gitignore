@@ -18,6 +18,10 @@ paper2601_domain_shift_report.html
 paper2601_domain_shift_report.json
 paper2601_static_domain_shift.tsv
 paper2601_patient_score_shift.tsv
+paper2601_stable_static_domain_shift_report.html
+paper2601_stable_static_domain_shift_report.json
+paper2601_stable_static_domain_shift.tsv
+paper2601_stable_static_patient_score_shift.tsv
 Preproc/
 
 *.xlsx
