@@ -6,12 +6,21 @@ cd "$(dirname "$0")"
 OUTPUT_DIR="${OUTPUT_DIR:-outputs/audio_primary_static_aux}"
 DEVICE="${DEVICE:-cuda}"
 SEED="${SEED:-2718}"
+STATIC_FEATURE_TABLE="${STATIC_FEATURE_TABLE:-split_ast_local_artifacts/split_ast_static_131_features/split_ast_static_131_by_patient_vowel.csv}"
+
+EXTRA_ARGS=()
+if [[ -n "${STABLE_STATIC_TABLE:-}" ]]; then
+  EXTRA_ARGS+=(--stable-static-table "$STABLE_STATIC_TABLE")
+else
+  EXTRA_ARGS+=(--static-feature-table "$STATIC_FEATURE_TABLE")
+fi
 
 uv run --no-sync python scripts/final_pipeline.py \
   --output-dir "$OUTPUT_DIR" \
   --models split_ast_audio_primary_stable_static \
   --seeds "$SEED" \
   --device "$DEVICE" \
+  "${EXTRA_ARGS[@]}" \
   --stage1-global-rounds "${STAGE1_GLOBAL_ROUNDS:-120}" \
   --stage1-local-epochs "${STAGE1_LOCAL_EPOCHS:-5}" \
   --stage2-global-rounds "${STAGE2_GLOBAL_ROUNDS:-250}" \
