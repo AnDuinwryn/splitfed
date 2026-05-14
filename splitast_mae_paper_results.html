@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SplitAST-MAE Paper Results</title>
+<style>
+:root {
+  --bg:#f6f3ed;
+  --panel:#ffffff;
+  --ink:#111827;
+  --muted:#64748b;
+  --line:#d9d2c7;
+  --blue:#3568b8;
+  --green:#1f7a68;
+  --amber:#c88425;
+  --red:#b84545;
+  --purple:#6f5ca8;
+}
+* { box-sizing:border-box; }
+body {
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:Arial, "Microsoft YaHei UI", sans-serif;
+}
+main {
+  max-width:1180px;
+  margin:0 auto;
+  padding:34px 28px 56px;
+}
+h1 {
+  margin:0 0 8px;
+  font-size:34px;
+  line-height:1.15;
+  letter-spacing:0;
+}
+h2 {
+  margin:34px 0 12px;
+  font-size:22px;
+  letter-spacing:0;
+}
+h3 {
+  margin:22px 0 10px;
+  font-size:16px;
+}
+p {
+  max-width:980px;
+  color:var(--muted);
+  line-height:1.52;
+  margin:8px 0 0;
+}
+.lede {
+  font-size:15px;
+  color:#334155;
+}
+.cards {
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:14px;
+  margin:24px 0 20px;
+}
+.card {
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:6px;
+  padding:16px;
+}
+.card .k {
+  color:var(--muted);
+  font-size:12px;
+  font-weight:700;
+  text-transform:uppercase;
+}
+.card .v {
+  margin-top:8px;
+  font-size:26px;
+  font-weight:800;
+}
+.card .n {
+  margin-top:6px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.35;
+}
+.panel {
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:18px;
+  margin-top:14px;
+}
+.takeaways {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:14px;
+}
+.takeaway {
+  background:#fff;
+  border-left:5px solid var(--green);
+  padding:14px 16px;
+  color:#263443;
+  line-height:1.45;
+}
+.takeaway.warn { border-color:var(--amber); }
+.takeaway.bad { border-color:var(--red); }
+table {
+  width:100%;
+  border-collapse:collapse;
+  table-layout:fixed;
+  background:#fff;
+  border:1px solid var(--line);
+  font-size:13px;
+}
+th, td {
+  border-bottom:1px solid #ebe5dc;
+  padding:9px 8px;
+  text-align:center;
+  vertical-align:middle;
+  line-height:1.25;
+}
+th {
+  background:#ece6dc;
+  color:#1f2937;
+  font-size:11px;
+  text-transform:uppercase;
+}
+td:first-child, th:first-child {
+  text-align:left;
+  width:22%;
+}
+td:nth-child(2), th:nth-child(2) {
+  text-align:left;
+  width:15%;
+}
+td:nth-child(3), th:nth-child(3) {
+  width:13%;
+}
+td.cm {
+  width:12%;
+  font-family:Consolas, "Courier New", monospace;
+  font-size:12px;
+}
+.num { font-weight:800; }
+.good { color:var(--green); }
+.mid { color:var(--amber); }
+.bad { color:var(--red); }
+.tag {
+  display:inline-block;
+  padding:3px 7px;
+  border-radius:4px;
+  background:#f1ede5;
+  color:#334155;
+  font-size:11px;
+  font-weight:700;
+}
+.figure-grid {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:16px;
+}
+.chart-title {
+  font-weight:800;
+  margin-bottom:12px;
+}
+.bar-row {
+  display:grid;
+  grid-template-columns:178px 1fr 46px;
+  gap:10px;
+  align-items:center;
+  margin:9px 0;
+  min-height:24px;
+}
+.bar-label {
+  font-size:13px;
+  font-weight:700;
+  color:#1f2937;
+}
+.track {
+  height:16px;
+  background:#ede8df;
+  overflow:hidden;
+}
+.bar {
+  height:16px;
+}
+.bar.blue { background:var(--blue); }
+.bar.green { background:var(--green); }
+.bar.amber { background:var(--amber); }
+.bar.red { background:var(--red); }
+.bar.purple { background:var(--purple); }
+.bar-value {
+  font-size:13px;
+  font-weight:800;
+  color:#263443;
+  text-align:right;
+}
+.scatter {
+  width:100%;
+  height:360px;
+  display:block;
+  background:#fff;
+  border:1px solid var(--line);
+}
+.caption {
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.42;
+  margin-top:8px;
+}
+.use-grid {
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:14px;
+}
+.use-card {
+  border:1px solid var(--line);
+  background:#fff;
+  border-radius:6px;
+  padding:14px;
+}
+.use-card h3 { margin-top:0; }
+.use-card ul {
+  margin:8px 0 0 18px;
+  padding:0;
+  color:#334155;
+  line-height:1.45;
+}
+.name-table td:first-child, .name-table th:first-child { width:24%; }
+.name-table td:nth-child(2), .name-table th:nth-child(2) { width:18%; text-align:left; }
+.name-table td:nth-child(3), .name-table th:nth-child(3) { text-align:left; }
+@media (max-width:900px) {
+  main { padding:24px 16px 42px; }
+  .cards, .takeaways, .figure-grid, .use-grid { grid-template-columns:1fr; }
+  .bar-row { grid-template-columns:138px 1fr 42px; }
+  table { font-size:12px; }
+}
+</style>
+</head>
+<body>
+<main>
+<h1>SplitAST-MAE Patient-Level Results for Paper Figures</h1>
+<p class="lede">This page is the paper-facing summary. It intentionally excludes the full experiment audit rows and keeps only the comparisons that support the final narrative: formal fixed-threshold evaluation, diagnostic threshold/scaling analyses, and ablation evidence for cross-domain failure modes.</p>
+
+<div class="cards">
+  <div class="card">
+    <div class="k">Best formal EENT accuracy</div>
+    <div class="v">0.941</div>
+    <div class="n">Proposed full model: SplitAST-MAE + 131D static features, fixed 0.5. Strong in-domain result but SVD collapses to all-positive.</div>
+  </div>
+  <div class="card">
+    <div class="k">Best formal SVD accuracy</div>
+    <div class="v">0.830</div>
+    <div class="n">SSAST baseline under SplitFed, fixed 0.5. Best external-domain patient-level generalization.</div>
+  </div>
+  <div class="card">
+    <div class="k">Most usable SplitAST-MAE fixed trade-off</div>
+    <div class="v">0.890 / 0.710</div>
+    <div class="n">Audio-only SplitAST-MAE, no static features. Lower EENT, but avoids the static-feature collapse.</div>
+  </div>
+</div>
+
+<h2>Model Names Used in This Page</h2>
+<table class="name-table">
+<thead>
+<tr><th>Name in figures</th><th>Short role</th><th>Exact meaning</th></tr>
+</thead>
+<tbody>
+<tr><td>CNN centralized</td><td>baseline</td><td>Original CNN trained/evaluated without split learning.</td></tr>
+<tr><td>CNN SplitFed</td><td>baseline</td><td>Original CNN adapted to the SplitFed pipeline.</td></tr>
+<tr><td>SSAST SplitFed</td><td>baseline</td><td>Your existing SplitFed SSAST/AST-style baseline.</td></tr>
+<tr><td>Proposed full</td><td>main SplitAST-MAE</td><td>SplitAST-MAE audio encoder plus all 131D static acoustic features.</td></tr>
+<tr><td>Audio only</td><td>ablation</td><td>SplitAST-MAE audio branch only; no Parselmouth/OpenSMILE static features.</td></tr>
+<tr><td>Stable static</td><td>ablation</td><td>SplitAST-MAE plus the restricted static feature set with gate/clipping.</td></tr>
+<tr><td>Static only</td><td>diagnostic control</td><td>131D static acoustic features only; no AST/MAE audio representation.</td></tr>
+</tbody>
+</table>
+<p class="caption">Formal fixed-threshold evaluation means the model is evaluated with the same fixed decision rule, here probability threshold 0.5. It does not tune the threshold using SVD labels, and it does not use SVD labels to choose a more favorable operating point.</p>
+
+<h2>What the Current Full Report Was Saying</h2>
+<div class="takeaways">
+  <div class="takeaway">
+    The full HTML was an audit dashboard. It mixed formal fixed 0.5 results with diagnostic Youden thresholds, EENT-validation thresholds, SVD-independent static scaling, and summary-only rows.
+  </div>
+  <div class="takeaway warn">
+    The main experimental message is not "SplitAST-MAE wins everywhere". It is: static features lift EENT strongly, but create a severe domain-shift failure on SVD.
+  </div>
+  <div class="takeaway">
+    Audio-only and stable-static variants recover SVD to the 0.71-0.73 range, but they lose the high EENT accuracy that all 131D static features provide.
+  </div>
+  <div class="takeaway bad">
+    Rows using Youden or SVD-independent scaling are diagnostic evidence, not formal fixed-threshold claims, because the threshold/scaling protocol is no longer the same as fixed 0.5 cross-domain testing.
+  </div>
+</div>
+
+<h2>Figure 1. Formal Fixed-Threshold Patient-Level Comparison</h2>
+<div class="figure-grid">
+  <div class="panel">
+    <div class="chart-title">EENT accuracy, fixed threshold 0.5</div>
+    <div class="bar-row"><div class="bar-label">Proposed full</div><div class="track"><div class="bar green" style="width:94.1%"></div></div><div class="bar-value">0.941</div></div>
+    <div class="bar-row"><div class="bar-label">CNN centralized</div><div class="track"><div class="bar blue" style="width:93.2%"></div></div><div class="bar-value">0.932</div></div>
+    <div class="bar-row"><div class="bar-label">CNN SplitFed</div><div class="track"><div class="bar blue" style="width:93.2%"></div></div><div class="bar-value">0.932</div></div>
+    <div class="bar-row"><div class="bar-label">Static only</div><div class="track"><div class="bar purple" style="width:92.4%"></div></div><div class="bar-value">0.924</div></div>
+    <div class="bar-row"><div class="bar-label">Audio only</div><div class="track"><div class="bar amber" style="width:89.0%"></div></div><div class="bar-value">0.890</div></div>
+    <div class="bar-row"><div class="bar-label">SSAST SplitFed</div><div class="track"><div class="bar blue" style="width:89.0%"></div></div><div class="bar-value">0.890</div></div>
+    <div class="bar-row"><div class="bar-label">Stable static</div><div class="track"><div class="bar amber" style="width:87.3%"></div></div><div class="bar-value">0.873</div></div>
+  </div>
+  <div class="panel">
+    <div class="chart-title">SVD accuracy, fixed threshold 0.5</div>
+    <div class="bar-row"><div class="bar-label">SSAST SplitFed</div><div class="track"><div class="bar blue" style="width:83.0%"></div></div><div class="bar-value">0.830</div></div>
+    <div class="bar-row"><div class="bar-label">CNN SplitFed</div><div class="track"><div class="bar blue" style="width:79.0%"></div></div><div class="bar-value">0.790</div></div>
+    <div class="bar-row"><div class="bar-label">CNN centralized</div><div class="track"><div class="bar blue" style="width:77.0%"></div></div><div class="bar-value">0.770</div></div>
+    <div class="bar-row"><div class="bar-label">Stable static</div><div class="track"><div class="bar amber" style="width:73.0%"></div></div><div class="bar-value">0.730</div></div>
+    <div class="bar-row"><div class="bar-label">Audio only</div><div class="track"><div class="bar amber" style="width:71.0%"></div></div><div class="bar-value">0.710</div></div>
+    <div class="bar-row"><div class="bar-label">Proposed full</div><div class="track"><div class="bar red" style="width:50.0%"></div></div><div class="bar-value">0.500</div></div>
+    <div class="bar-row"><div class="bar-label">Static only</div><div class="track"><div class="bar red" style="width:50.0%"></div></div><div class="bar-value">0.500</div></div>
+  </div>
+</div>
+<p class="caption">Interpretation: all 131D static features maximize EENT, but the SVD decision boundary collapses. The strongest external baseline remains SSAST SplitFed.</p>
+
+<h2>Table 1. Formal Fixed-Threshold Metrics</h2>
+<table>
+<thead>
+<tr>
+  <th>Model</th><th>Role</th><th>Protocol</th>
+  <th>EENT Acc</th><th>EENT F1</th><th>EENT AUC</th><th>EENT CM</th>
+  <th>SVD Acc</th><th>SVD F1</th><th>SVD AUC</th><th>SVD Spec</th><th>SVD CM</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>CNN centralized</td><td>Baseline, no split</td><td>fixed 0.5</td><td class="num mid">0.932</td><td class="num good">0.942</td><td class="num good">0.973</td><td class="cm">[45 3; 5 65]</td><td class="num mid">0.770</td><td class="num good">0.810</td><td class="num good">0.934</td><td class="num mid">0.560</td><td class="cm">[56 44; 2 98]</td></tr>
+<tr><td>CNN SplitFed</td><td>Baseline, split learning</td><td>fixed 0.5</td><td class="num mid">0.932</td><td class="num good">0.941</td><td class="num good">0.979</td><td class="cm">[46 2; 6 64]</td><td class="num good">0.790</td><td class="num good">0.822</td><td class="num good">0.919</td><td class="num mid">0.610</td><td class="cm">[61 39; 3 97]</td></tr>
+<tr><td>SSAST SplitFed</td><td>Baseline, transformer</td><td>fixed 0.5</td><td class="num mid">0.890</td><td class="num mid">0.905</td><td class="num mid">0.940</td><td class="cm">[43 5; 8 62]</td><td class="num good">0.830</td><td class="num good">0.835</td><td class="num good">0.924</td><td class="num good">0.800</td><td class="cm">[80 20; 14 86]</td></tr>
+<tr><td>Proposed full: SplitAST-MAE + 131D static</td><td>Main proposed variant</td><td>fixed 0.5</td><td class="num good">0.941</td><td class="num good">0.951</td><td class="num good">0.987</td><td class="cm">[43 5; 2 68]</td><td class="num bad">0.500</td><td class="num bad">0.667</td><td class="num bad">0.593</td><td class="num bad">0.000</td><td class="cm">[0 100; 0 100]</td></tr>
+<tr><td>Audio only: SplitAST-MAE, no static</td><td>Ablation</td><td>fixed 0.5</td><td class="num mid">0.890</td><td class="num mid">0.912</td><td class="num mid">0.936</td><td class="cm">[38 10; 3 67]</td><td class="num mid">0.710</td><td class="num mid">0.758</td><td class="num mid">0.826</td><td class="num mid">0.510</td><td class="cm">[51 49; 9 91]</td></tr>
+<tr><td>Stable static: restricted static + gate/clip</td><td>Ablation</td><td>fixed 0.5</td><td class="num bad">0.873</td><td class="num mid">0.895</td><td class="num mid">0.929</td><td class="cm">[39 9; 6 64]</td><td class="num mid">0.730</td><td class="num mid">0.763</td><td class="num mid">0.829</td><td class="num mid">0.590</td><td class="cm">[59 41; 13 87]</td></tr>
+<tr><td>Static only: 131D, no audio model</td><td>Diagnostic control</td><td>fixed 0.5</td><td class="num mid">0.924</td><td class="num mid">0.939</td><td class="num good">0.985</td><td class="cm">[40 8; 1 69]</td><td class="num bad">0.500</td><td class="num bad">0.667</td><td class="num bad">0.636</td><td class="num bad">0.000</td><td class="cm">[0 100; 0 100]</td></tr>
+</tbody>
+</table>
+
+<h2>Figure 2. Cross-Domain Trade-Off Among SplitAST-MAE Variants</h2>
+<div class="panel">
+<svg class="scatter" viewBox="0 0 760 360" role="img" aria-label="Scatter plot of EENT accuracy versus SVD accuracy">
+  <rect x="0" y="0" width="760" height="360" fill="#fff"/>
+  <line x1="70" y1="304" x2="720" y2="304" stroke="#1f2937" stroke-width="1.4"/>
+  <line x1="70" y1="44" x2="70" y2="304" stroke="#1f2937" stroke-width="1.4"/>
+  <text x="365" y="344" text-anchor="middle" font-size="14" font-weight="700">EENT accuracy</text>
+  <text x="20" y="176" transform="rotate(-90 20 176)" text-anchor="middle" font-size="14" font-weight="700">SVD accuracy</text>
+  <g stroke="#e6ded2" stroke-width="1">
+    <line x1="70" y1="252" x2="720" y2="252"/><line x1="70" y1="200" x2="720" y2="200"/><line x1="70" y1="148" x2="720" y2="148"/><line x1="70" y1="96" x2="720" y2="96"/>
+    <line x1="200" y1="44" x2="200" y2="304"/><line x1="330" y1="44" x2="330" y2="304"/><line x1="460" y1="44" x2="460" y2="304"/><line x1="590" y1="44" x2="590" y2="304"/>
+  </g>
+  <text x="70" y="324" text-anchor="middle" font-size="11" fill="#64748b">0.85</text>
+  <text x="330" y="324" text-anchor="middle" font-size="11" fill="#64748b">0.90</text>
+  <text x="590" y="324" text-anchor="middle" font-size="11" fill="#64748b">0.95</text>
+  <text x="50" y="307" text-anchor="end" font-size="11" fill="#64748b">0.50</text>
+  <text x="50" y="255" text-anchor="end" font-size="11" fill="#64748b">0.60</text>
+  <text x="50" y="203" text-anchor="end" font-size="11" fill="#64748b">0.70</text>
+  <text x="50" y="151" text-anchor="end" font-size="11" fill="#64748b">0.80</text>
+  <circle cx="543" cy="304" r="7" fill="#b84545"><title>Proposed full fixed: EENT 0.941, SVD 0.500</title></circle>
+  <text x="553" y="298" font-size="12" font-weight="700" fill="#b84545">Proposed full</text>
+  <circle cx="278" cy="195" r="7" fill="#c88425"><title>Audio only fixed: EENT 0.890, SVD 0.710</title></circle>
+  <text x="288" y="189" font-size="12" font-weight="700" fill="#c88425">Audio only</text>
+  <circle cx="190" cy="185" r="7" fill="#c88425"><title>Stable static fixed: EENT 0.873, SVD 0.730</title></circle>
+  <text x="200" y="179" font-size="12" font-weight="700" fill="#c88425">Stable static</text>
+  <circle cx="278" cy="117" r="7" fill="#3568b8"><title>SSAST SplitFed fixed: EENT 0.890, SVD 0.830</title></circle>
+  <text x="288" y="111" font-size="12" font-weight="700" fill="#3568b8">SSAST SplitFed</text>
+  <circle cx="630" cy="247" r="7" fill="#6f5ca8"><title>all131 Youden + SVD independent scaling: EENT 0.958, SVD 0.675</title></circle>
+  <text x="640" y="241" font-size="12" font-weight="700" fill="#6f5ca8">Full diagnostic</text>
+  <circle cx="278" cy="157" r="7" fill="#6f5ca8"><title>pathology_source_tilt Youden + SVD independent scaling: EENT 0.890, SVD 0.785</title></circle>
+  <text x="288" y="151" font-size="12" font-weight="700" fill="#6f5ca8">source-tilt diagnostic</text>
+</svg>
+<p class="caption">Fixed-threshold rows use the same decision rule across datasets. Purple diagnostic rows show how much of the failure is threshold/scaling sensitive, but they should not be presented as the primary formal score.</p>
+</div>
+
+<h2>Table 2. Diagnostic Rows for Mechanism, Not Main Claim</h2>
+<table>
+<thead>
+<tr>
+  <th>Variant</th><th>Why include</th><th>Protocol</th>
+  <th>EENT Acc</th><th>EENT F1</th><th>EENT AUC</th>
+  <th>SVD Acc</th><th>SVD F1</th><th>SVD AUC</th><th>SVD Spec</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>Proposed full</td><td>Maximum EENT diagnostic</td><td>Youden + EENT-train scaling</td><td class="num good">0.958</td><td class="num good">0.964</td><td class="num good">0.987</td><td class="num bad">0.610</td><td class="num bad">0.552</td><td class="num bad">0.593</td><td class="num mid">0.740</td></tr>
+<tr><td>Proposed full</td><td>Scaling sensitivity</td><td>Youden + SVD independent scaling</td><td class="num good">0.958</td><td class="num good">0.964</td><td class="num good">0.987</td><td class="num bad">0.675</td><td class="num bad">0.686</td><td class="num mid">0.723</td><td class="num mid">0.640</td></tr>
+<tr><td>Pathology-source-tilt L5</td><td>Best diagnostic SVD trade-off</td><td>Youden + SVD independent scaling</td><td class="num mid">0.890</td><td class="num mid">0.906</td><td class="num mid">0.924</td><td class="num mid">0.785</td><td class="num mid">0.777</td><td class="num mid">0.831</td><td class="num good">0.820</td></tr>
+<tr><td>Stable static</td><td>Stable feature restriction</td><td>Youden + EENT-train scaling</td><td class="num mid">0.890</td><td class="num mid">0.906</td><td class="num mid">0.929</td><td class="num mid">0.775</td><td class="num mid">0.743</td><td class="num mid">0.829</td><td class="num good">0.900</td></tr>
+<tr><td>Static only</td><td>Confirms static feature overfit</td><td>fixed 0.5</td><td class="num mid">0.924</td><td class="num mid">0.939</td><td class="num good">0.985</td><td class="num bad">0.500</td><td class="num bad">0.667</td><td class="num bad">0.636</td><td class="num bad">0.000</td></tr>
+</tbody>
+</table>
+
+<h2>What Can Go Into the Paper</h2>
+<div class="use-grid">
+  <div class="use-card">
+    <h3>Main Result Table</h3>
+    <ul>
+      <li>Use Table 1 as the clean patient-level comparison.</li>
+      <li>Report fixed 0.5 as the formal fixed-threshold protocol.</li>
+      <li>State that SplitAST-MAE improves EENT with all131 features but fails under SVD domain shift.</li>
+    </ul>
+  </div>
+  <div class="use-card">
+    <h3>Ablation Figure</h3>
+    <ul>
+      <li>Use Figure 1 or Figure 2 to show the EENT/SVD trade-off.</li>
+      <li>Audio-only and stable-static rows support the diagnosis that static features drive much of the cross-domain collapse.</li>
+      <li>Static-only 131D is the strongest evidence for corpus-specific static-feature bias.</li>
+    </ul>
+  </div>
+  <div class="use-card">
+    <h3>Supplement Only</h3>
+    <ul>
+      <li>Use Youden and SVD-independent scaling as diagnostic/supplementary evidence.</li>
+      <li>Do not use them as the primary performance claim unless the paper explicitly defines that protocol.</li>
+      <li>The previous full HTML remains useful as an audit trail, not as a paper figure.</li>
+    </ul>
+  </div>
+</div>
+
+</main>
+</body>
+</html>

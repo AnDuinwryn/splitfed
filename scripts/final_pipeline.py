@@ -35,6 +35,10 @@ DEFAULT_MODELS = [
     "split_ast_all131_gated_clip",
     "split_ast_pathology22_gated_clip",
 ]
+MODEL_CHOICES = [
+    *DEFAULT_MODELS,
+    "split_ast_audio_primary_stable_static",
+]
 
 
 @dataclass(frozen=True)
@@ -408,9 +412,22 @@ def _controlled_stage2_train(
     static_dropout: float,
     static_gate_init: float,
     static_z_clip: float,
-    dry_run: bool,
+    static_max_weight: Optional[float] = None,
+    static_anomaly_threshold: Optional[float] = None,
+    static_anomaly_scale: Optional[float] = None,
+    static_aux_hidden_dim: Optional[int] = None,
+    dry_run: bool = False,
 ) -> None:
     _mkdir(run_dir, dry_run=dry_run)
+    extra_control_args: list[object] = []
+    if static_max_weight is not None:
+        extra_control_args.extend(["--static-max-weight", static_max_weight])
+    if static_anomaly_threshold is not None:
+        extra_control_args.extend(["--static-anomaly-threshold", static_anomaly_threshold])
+    if static_anomaly_scale is not None:
+        extra_control_args.extend(["--static-anomaly-scale", static_anomaly_scale])
+    if static_aux_hidden_dim is not None:
+        extra_control_args.extend(["--static-aux-hidden-dim", static_aux_hidden_dim])
     for vowel in ("a", "i"):
         stage1_client, stage1_server = _stage1_paths(stage1_dir, vowel)
         static_args: list[object] = ["--static-feature-source", "none"]
@@ -465,6 +482,7 @@ def _controlled_stage2_train(
                 static_gate_init,
                 "--static-z-clip",
                 static_z_clip,
+                *extra_control_args,
             ),
             dry_run=dry_run,
         )
@@ -652,6 +670,28 @@ def train_eval_split_ast_variant(
             static_z_clip=args.control_static_z_clip,
             dry_run=dry_run,
         )
+    elif model_key == "split_ast_audio_primary_stable_static":
+        if stable_static_table is None:
+            raise RuntimeError("stable static table was not prepared")
+        controlled = True
+        _controlled_stage2_train(
+            args,
+            seed,
+            run_dir,
+            stage1_dir,
+            static_table=stable_static_table,
+            static_preset="all",
+            fusion_mode="audio_primary_aux",
+            static_projection_dim=args.audio_primary_static_projection_dim,
+            static_dropout=args.audio_primary_static_dropout,
+            static_gate_init=args.audio_primary_static_gate_init,
+            static_z_clip=0.0,
+            static_max_weight=args.audio_primary_static_max_weight,
+            static_anomaly_threshold=args.audio_primary_static_anomaly_threshold,
+            static_anomaly_scale=args.audio_primary_static_anomaly_scale,
+            static_aux_hidden_dim=args.audio_primary_static_aux_hidden_dim,
+            dry_run=dry_run,
+        )
     else:
         raise ValueError(f"Unsupported SplitAST-MAE model key: {model_key}")
     if args.skip_eval:
@@ -660,7 +700,8 @@ def train_eval_split_ast_variant(
 
 
 def prepare_stable_static_table(args: argparse.Namespace, dry_run: bool) -> Optional[Path]:
-    if "split_ast_stable_static_gated_clip" not in args.models:
+    stable_models = {"split_ast_stable_static_gated_clip", "split_ast_audio_primary_stable_static"}
+    if not any(model in stable_models for model in args.models):
         return None
     out_dir = args.output_dir / "static_features"
     table = out_dir / "stable_static_by_patient_vowel.csv"
@@ -975,7 +1016,7 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
     p.add_argument("--output-dir", type=Path, default=Path("outputs/final_pipeline"))
-    p.add_argument("--models", nargs="+", default=list(DEFAULT_MODELS), choices=DEFAULT_MODELS)
+    p.add_argument("--models", nargs="+", default=list(DEFAULT_MODELS), choices=MODEL_CHOICES)
     p.add_argument("--n-seeds", type=int, default=10)
     p.add_argument("--seed-start", type=int, default=2718)
     p.add_argument("--seeds", nargs="*", type=int, default=None)
@@ -1035,6 +1076,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--control-static-dropout", type=float, default=0.30)
     p.add_argument("--control-static-gate-init", type=float, default=0.25)
     p.add_argument("--control-static-z-clip", type=float, default=3.0)
+    p.add_argument("--audio-primary-static-projection-dim", type=int, default=32)
+    p.add_argument("--audio-primary-static-dropout", type=float, default=0.35)
+    p.add_argument("--audio-primary-static-gate-init", type=float, default=0.20)
+    p.add_argument("--audio-primary-static-max-weight", type=float, default=0.35)
+    p.add_argument("--audio-primary-static-anomaly-threshold", type=float, default=2.5)
+    p.add_argument("--audio-primary-static-anomaly-scale", type=float, default=1.0)
+    p.add_argument("--audio-primary-static-aux-hidden-dim", type=int, default=64)
     p.add_argument("--include-youden", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--include-eent-val-threshold", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--include-domain-shift-report", action=argparse.BooleanOptionalAction, default=True)

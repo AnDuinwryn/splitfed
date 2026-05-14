@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SplitAST-MAE Result Report</title>
+<style>
+:root {
+  --bg:#f7f4ee; --ink:#17202a; --muted:#69727f; --line:#d6d0c7;
+  --green:#277566; --blue:#3867b7; --amber:#c9862a; --red:#b94a48; --purple:#6d5aa7;
+}
+body { margin:0; background:var(--bg); color:var(--ink); font-family:Arial, "Microsoft YaHei UI", sans-serif; }
+main { max-width:1320px; margin:0 auto; padding:36px 28px 60px; }
+h1 { margin:0 0 8px; font-size:34px; line-height:1.15; }
+h2 { margin:34px 0 14px; font-size:22px; }
+p { color:var(--muted); line-height:1.55; }
+code { background:#ece7dd; padding:2px 5px; border-radius:4px; }
+.cards { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin:26px 0; }
+.card { background:white; border:1px solid var(--line); padding:18px; min-height:118px; }
+.card-title { color:var(--green); font-size:12px; font-weight:700; text-transform:uppercase; }
+.card-value { font-size:34px; font-weight:800; margin:10px 0 8px; }
+.card-note { color:var(--muted); font-size:12px; line-height:1.35; }
+.grid { display:grid; grid-template-columns:1fr; gap:18px; }
+.chart { width:100%; max-width:100%; border:1px solid var(--line); box-shadow:0 1px 0 rgba(0,0,0,.03); display:block; }
+.chart.small { max-width:100%; }
+.axis,.bar-label,.bar-value,.point-label { font-family:Arial, sans-serif; font-size:12px; fill:#69727f; }
+.axis-title,.chart-title { font-family:Arial, sans-serif; font-size:14px; font-weight:700; fill:#17202a; }
+.point-label { display:none; font-weight:700; font-size:11px; paint-order:stroke; stroke:#fff; stroke-width:3px; stroke-linejoin:round; }
+.point-label.anchor-label { display:block; }
+.bar-label { font-weight:700; fill:#17202a; }
+.bar-value { fill:#17202a; }
+.warn { background:#fff5f5; border-left:5px solid var(--red); padding:14px 16px; margin:20px 0; color:#5b2625; }
+.note { background:#fff; border-left:5px solid var(--green); padding:14px 16px; margin:20px 0; color:var(--muted); }
+table { width:100%; min-width:1640px; table-layout:fixed; border-collapse:collapse; background:#fff; border:1px solid var(--line); font-size:13px; }
+th,td { border-bottom:1px solid #ebe6dd; padding:9px 10px; text-align:right; vertical-align:middle; line-height:1.25; }
+th { background:#ece7dd; font-size:12px; text-transform:uppercase; color:#333; position:sticky; top:0; }
+td:first-child, th:first-child, td:nth-child(2), th:nth-child(2), td:nth-child(3), th:nth-child(3), td:nth-child(13), th:nth-child(13), td:nth-child(14), th:nth-child(14) { text-align:left; }
+.source { color:var(--muted); font-size:11px; max-width:260px; word-break:break-word; font-family:Consolas, "Courier New", monospace; }
+.table-wrap { overflow-x:auto; overflow-y:visible; border:1px solid var(--line); background:#fff; }
+td:nth-child(1), th:nth-child(1) { width:310px; min-width:310px; }
+td:nth-child(2), th:nth-child(2) { width:118px; }
+td:nth-child(3), th:nth-child(3) { width:210px; }
+td:nth-child(4), th:nth-child(4),
+td:nth-child(5), th:nth-child(5),
+td:nth-child(6), th:nth-child(6),
+td:nth-child(8), th:nth-child(8),
+td:nth-child(9), th:nth-child(9),
+td:nth-child(10), th:nth-child(10),
+td:nth-child(11), th:nth-child(11) { width:72px; text-align:center; white-space:nowrap; }
+td:nth-child(7), th:nth-child(7),
+td:nth-child(12), th:nth-child(12) { width:112px; text-align:center; white-space:nowrap; font-family:Consolas, "Courier New", monospace; font-size:12px; }
+td:nth-child(13), th:nth-child(13) { width:220px; }
+td:nth-child(14), th:nth-child(14) { width:260px; }
+.chart-help { margin-top:8px; color:var(--muted); font-size:12px; }
+.table-note { margin:0 0 10px; color:var(--muted); font-size:13px; }
+.table-wrap { overflow:visible !important; }
+table { min-width:0 !important; width:100% !important; table-layout:fixed !important; font-size:12px !important; }
+th,td { padding:8px 7px !important; overflow:hidden; text-overflow:ellipsis; }
+td:nth-child(13), th:nth-child(13),
+td:nth-child(14), th:nth-child(14) { display:none; }
+td:nth-child(1), th:nth-child(1) { width:18% !important; text-align:left; white-space:normal; overflow:visible; text-overflow:clip; }
+td:nth-child(2), th:nth-child(2) { width:8% !important; text-align:left; white-space:normal; }
+td:nth-child(3), th:nth-child(3) { width:14% !important; text-align:left; white-space:normal; }
+td:nth-child(4), th:nth-child(4),
+td:nth-child(5), th:nth-child(5),
+td:nth-child(6), th:nth-child(6),
+td:nth-child(8), th:nth-child(8),
+td:nth-child(9), th:nth-child(9),
+td:nth-child(10), th:nth-child(10),
+td:nth-child(11), th:nth-child(11) { width:5.9% !important; text-align:center; white-space:nowrap; }
+td:nth-child(7), th:nth-child(7),
+td:nth-child(12), th:nth-child(12) { width:8.2% !important; text-align:center; white-space:normal; font-family:Consolas, "Courier New", monospace; font-size:11px; }
+.missing-cm { color:var(--muted); font-family:Arial, "Microsoft YaHei UI", sans-serif !important; font-size:11px !important; font-style:italic; }
+.bar-label { font-size:11px; }
+.good { color:var(--green); font-weight:800; }
+.mid { color:var(--amber); font-weight:800; }
+.bad { color:var(--red); font-weight:800; }
+.empty { padding:20px; background:#fff; border:1px solid var(--line); color:var(--muted); }
+details { margin-top:18px; }
+summary { cursor:pointer; font-weight:700; }
+@media (max-width:900px) { .cards { grid-template-columns:1fr 1fr; } }
+</style>
+</head>
+<body>
+<main>
+<h1>SplitAST-MAE / SplitFed Results Report</h1>
+<p>Standalone report rebuilt from evaluation JSON files. This does not depend on terminal scrollback. Full row data is embedded in this HTML.</p>
+
+<div class="cards">
+<div class="card"><div class="card-title">Best EENT Acc</div><div class="card-value">0.958</div><div class="card-note">paper2601_splitmae_runs_local5 | L5<br>youden diagnostic</div></div>
+<div class="card"><div class="card-title">Best EENT F1</div><div class="card-value">0.964</div><div class="card-note">paper2601_splitmae_runs_local5 | L5<br>youden diagnostic</div></div>
+<div class="card"><div class="card-title">Best SVD Acc</div><div class="card-value">0.830</div><div class="card-note">split SSAST<br>baseline</div></div>
+<div class="card"><div class="card-title">Best SVD AUC</div><div class="card-value">0.934</div><div class="card-note">centralized CNN<br>baseline</div></div>
+</div>
+<div class="note">Read fixed-threshold rows as formal evaluation. Youden and SVD-independent scaling rows are diagnostics unless explicitly selected as the protocol.</div>
+
+<h2>EENT vs SVD fixed/diagnostic landscape</h2>
+<svg viewBox="0 0 820 430" class="chart">
+<rect x="0" y="0" width="820" height="430" rx="12" fill="#fff"/>
+<line x1="72" y1="372" x2="792" y2="372" stroke="#17202A" stroke-width="1.5"/>
+<line x1="72" y1="28" x2="72" y2="372" stroke="#17202A" stroke-width="1.5"/>
+<line x1="72.0" y1="28" x2="72.0" y2="372" stroke="#ECE7DD"/>
+<text x="72.0" y="396" text-anchor="middle" class="axis">0.5</text>
+<line x1="216.0" y1="28" x2="216.0" y2="372" stroke="#ECE7DD"/>
+<text x="216.0" y="396" text-anchor="middle" class="axis">0.6</text>
+<line x1="360.0" y1="28" x2="360.0" y2="372" stroke="#ECE7DD"/>
+<text x="360.0" y="396" text-anchor="middle" class="axis">0.7</text>
+<line x1="504.0" y1="28" x2="504.0" y2="372" stroke="#ECE7DD"/>
+<text x="504.0" y="396" text-anchor="middle" class="axis">0.8</text>
+<line x1="648.0" y1="28" x2="648.0" y2="372" stroke="#ECE7DD"/>
+<text x="648.0" y="396" text-anchor="middle" class="axis">0.9</text>
+<line x1="792.0" y1="28" x2="792.0" y2="372" stroke="#ECE7DD"/>
+<text x="792.0" y="396" text-anchor="middle" class="axis">1.0</text>
+<line x1="72" y1="333.8" x2="792" y2="333.8" stroke="#ECE7DD"/>
+<text x="58" y="337.8" text-anchor="end" class="axis">0.5</text>
+<line x1="72" y1="257.3" x2="792" y2="257.3" stroke="#ECE7DD"/>
+<text x="58" y="261.3" text-anchor="end" class="axis">0.6</text>
+<line x1="72" y1="180.9" x2="792" y2="180.9" stroke="#ECE7DD"/>
+<text x="58" y="184.9" text-anchor="end" class="axis">0.7</text>
+<line x1="72" y1="104.4" x2="792" y2="104.4" stroke="#ECE7DD"/>
+<text x="58" y="108.4" text-anchor="end" class="axis">0.8</text>
+<line x1="72" y1="28.0" x2="792" y2="28.0" stroke="#ECE7DD"/>
+<text x="58" y="32.0" text-anchor="end" class="axis">0.9</text>
+<text x="432.0" y="414" text-anchor="middle" class="axis-title">EENT accuracy</text>
+<text x="18" y="200.0" text-anchor="middle" class="axis-title" transform="rotate(-90 18 200.0)">SVD accuracy</text>
+<circle cx="694.4" cy="127.4" r="6" fill="#3867B7"><title>centralized CNN: EENT 0.932, SVD 0.770</title></circle>
+<text x="703.4" y="119.4" class="point-label" fill="#3867B7">centralized CNN</text>
+<circle cx="694.4" cy="112.1" r="6" fill="#3867B7"><title>split CNN: EENT 0.932, SVD 0.790</title></circle>
+<text x="703.4" y="104.1" class="point-label" fill="#3867B7">split CNN</text>
+<circle cx="633.4" cy="81.5" r="6" fill="#3867B7"><title>split SSAST: EENT 0.890, SVD 0.830</title></circle>
+<text x="642.4" y="73.5" class="point-label" fill="#3867B7">split SSAST</text>
+<circle cx="706.6" cy="333.8" r="6" fill="#6D5AA7"><title>paper2601_splitmae_runs_control_all131_gated_clip_local5 | gated | all | L5 | clip3.0: EENT 0.941, SVD 0.500</title></circle>
+<text x="715.6" y="325.8" class="point-label" fill="#6D5AA7">paper2601_splitmae_runs_control...</text>
+<circle cx="706.6" cy="333.8" r="6" fill="#6D5AA7"><title>paper2601_splitmae_runs_control_static_only_all131_local5 | static_only | all | L5 | clip3.0: EENT 0.941, SVD 0.500</title></circle>
+<text x="715.6" y="325.8" class="point-label" fill="#6D5AA7">paper2601_splitmae_runs_control...</text>
+<circle cx="694.4" cy="333.8" r="6" fill="#6D5AA7"><title>paper2601_splitmae_runs_control_all131_gated_clip_local5 | gated | all | L5 | clip3.0: EENT 0.932, SVD 0.500</title></circle>
+<text x="703.4" y="325.8" class="point-label" fill="#6D5AA7">paper2601_splitmae_runs_control...</text>
+<circle cx="682.2" cy="333.8" r="6" fill="#6D5AA7"><title>paper2601_splitmae_runs_control_static_only_all131_local5 | static_only | all | L5 | clip3.0: EENT 0.924, SVD 0.500</title></circle>
+<text x="691.2" y="325.8" class="point-label" fill="#6D5AA7">paper2601_splitmae_runs_control...</text>
+<circle cx="670.0" cy="169.4" r="6" fill="#6D5AA7"><title>paper2601_splitmae_runs_control_source_tilt_gated_clip_local5 | gated | pathology_source_tilt | L5 | clip3.0: EENT 0.915, SVD 0.715</title></circle>
+<text x="679.0" y="161.4" class="point-label" fill="#6D5AA7">paper2601_splitmae_runs_control...</text>
+<circle cx="645.6" cy="165.6" r="6" fill="#6D5AA7"><title>paper2601_splitmae_runs_control_mae_only_local5 | audio_only | all | L5: EENT 0.898, SVD 0.720</title></circle>
+<text x="654.6" y="157.6" class="point-label" fill="#6D5AA7">paper2601_splitmae_runs_control...</text>
+<circle cx="633.4" cy="173.2" r="6" fill="#6D5AA7"><title>paper2601_splitmae_runs_control_mae_only_local5 | audio_only | all | L5: EENT 0.890, SVD 0.710</title></circle>
+<text x="642.4" y="165.2" class="point-label" fill="#6D5AA7">paper2601_splitmae_runs_control...</text>
+<circle cx="621.2" cy="177.1" r="6" fill="#6D5AA7"><title>paper2601_splitmae_runs_control_pathology22_gated_clip_local5 | gated | pathology | L5 | clip3.0: EENT 0.881, SVD 0.705</title></circle>
+<text x="630.2" y="169.1" class="point-label" fill="#6D5AA7">paper2601_splitmae_runs_control...</text>
+<circle cx="596.7" cy="165.6" r="6" fill="#6D5AA7"><title>paper2601_splitmae_runs_control_pathology22_gated_clip_local5 | gated | pathology | L5 | clip3.0: EENT 0.864, SVD 0.720</title></circle>
+<text x="605.7" y="157.6" class="point-label" fill="#6D5AA7">paper2601_splitmae_runs_control...</text>
+<circle cx="584.5" cy="219.1" r="6" fill="#6D5AA7"><title>paper2601_splitmae_runs_control_source_tilt_gated_clip_local5 | gated | pathology_source_tilt | L5 | clip3.0: EENT 0.856, SVD 0.650</title></circle>
+<text x="593.5" y="211.1" class="point-label" fill="#6D5AA7">paper2601_splitmae_runs_control...</text>
+<circle cx="706.6" cy="333.8" r="6" fill="#277566"><title>paper2601_splitmae_runs_local5 | L5: EENT 0.941, SVD 0.500</title></circle>
+<text x="715.6" y="325.8" class="point-label" fill="#277566">paper2601_splitmae_runs_local5 ...</text>
+<circle cx="706.6" cy="333.8" r="6" fill="#277566"><title>paper2601_splitmae_runs_local5 | L5: EENT 0.941, SVD 0.500</title></circle>
+<text x="715.6" y="325.8" class="point-label" fill="#277566">paper2601_splitmae_runs_local5 ...</text>
+<circle cx="694.4" cy="333.8" r="6" fill="#277566"><title>paper2601_splitmae_runs_local1 | L1: EENT 0.932, SVD 0.500</title></circle>
+<text x="703.4" y="325.8" class="point-label" fill="#277566">paper2601_splitmae_runs_local1 ...</text>
+<circle cx="682.2" cy="333.8" r="6" fill="#277566"><title>paper2601_splitmae_runs_local1 | L1: EENT 0.924, SVD 0.500</title></circle>
+<text x="691.2" y="325.8" class="point-label" fill="#277566">paper2601_splitmae_runs_local1 ...</text>
+<circle cx="608.9" cy="177.1" r="6" fill="#277566"><title>paper2601_splitmae_runs_stable_static_gated_clip_local5 | gated | all | L5 | clip3.0: EENT 0.873, SVD 0.705</title></circle>
+<text x="617.9" y="169.1" class="point-label" fill="#277566">paper2601_splitmae_runs_stable_...</text>
+<circle cx="608.9" cy="158.0" r="6" fill="#277566"><title>paper2601_splitmae_runs_stable_static_gated_clip_local5 | gated | all | L5 | clip3.0: EENT 0.873, SVD 0.730</title></circle>
+<text x="617.9" y="150.0" class="point-label" fill="#277566">paper2601_splitmae_runs_stable_...</text>
+<circle cx="450.3" cy="200.0" r="6" fill="#277566"><title>paper2601_splitmae_runs_ssast_like_local5 | L5: EENT 0.763, SVD 0.675</title></circle>
+<text x="459.3" y="192.0" class="point-label" fill="#277566">paper2601_splitmae_runs_ssast_l...</text>
+<circle cx="450.3" cy="222.9" r="6" fill="#277566"><title>paper2601_splitmae_runs_ssast_like_local5 | L5: EENT 0.763, SVD 0.645</title></circle>
+<text x="459.3" y="214.9" class="point-label" fill="#277566">paper2601_splitmae_runs_ssast_l...</text>
+<circle cx="706.6" cy="222.9" r="6" fill="#B94A48"><title>paper2601_splitmae_runs_local5 | L5: EENT 0.941, SVD 0.645</title></circle>
+<text x="715.6" y="214.9" class="point-label" fill="#B94A48">paper2601_splitmae_runs_local5 ...</text>
+<circle cx="694.4" cy="203.8" r="6" fill="#B94A48"><title>paper2601_splitmae_runs_local1 | L1: EENT 0.932, SVD 0.670</title></circle>
+<text x="703.4" y="195.8" class="point-label" fill="#B94A48">paper2601_splitmae_runs_local1 ...</text>
+<circle cx="657.8" cy="215.3" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_voicing_local5 | pathology_voicing | L5: EENT 0.907, SVD 0.655</title></circle>
+<text x="666.8" y="207.3" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="657.8" cy="154.1" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_voicing_local5 | pathology_voicing | L5: EENT 0.907, SVD 0.735</title></circle>
+<text x="666.8" y="146.1" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="657.8" cy="146.5" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_voicing_local5 | pathology_voicing | L5: EENT 0.907, SVD 0.745</title></circle>
+<text x="666.8" y="138.5" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="657.8" cy="150.3" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_voicing_local5 | pathology_voicing | L5: EENT 0.907, SVD 0.740</title></circle>
+<text x="666.8" y="142.3" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="645.6" cy="215.3" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_voicing_local5 | pathology_voicing | L5: EENT 0.898, SVD 0.655</title></circle>
+<text x="654.6" y="207.3" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="633.4" cy="180.9" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology22_local5 | pathology | L5: EENT 0.890, SVD 0.700</title></circle>
+<text x="642.4" y="172.9" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="633.4" cy="165.6" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology22_local5 | pathology | L5: EENT 0.890, SVD 0.720</title></circle>
+<text x="642.4" y="157.6" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="633.4" cy="150.3" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology22_local5 | pathology | L5: EENT 0.890, SVD 0.740</title></circle>
+<text x="642.4" y="142.3" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="633.4" cy="142.7" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology22_local5 | pathology | L5: EENT 0.890, SVD 0.750</title></circle>
+<text x="642.4" y="134.7" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="633.4" cy="123.6" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5 | pathology_source_tilt | L5: EENT 0.890, SVD 0.775</title></circle>
+<text x="642.4" y="115.6" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="633.4" cy="115.9" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5 | pathology_source_tilt | L5: EENT 0.890, SVD 0.785</title></circle>
+<text x="642.4" y="107.9" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="621.2" cy="234.4" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology22_local1 | pathology | L1: EENT 0.881, SVD 0.630</title></circle>
+<text x="630.2" y="226.4" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="621.2" cy="150.3" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_voicing_local1 | pathology_voicing | L1: EENT 0.881, SVD 0.740</title></circle>
+<text x="630.2" y="142.3" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="621.2" cy="150.3" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_voicing_local1 | pathology_voicing | L1: EENT 0.881, SVD 0.740</title></circle>
+<text x="630.2" y="142.3" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="608.9" cy="222.9" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology22_local1 | pathology | L1: EENT 0.873, SVD 0.645</title></circle>
+<text x="617.9" y="214.9" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="608.9" cy="177.1" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology22_local1 | pathology | L1: EENT 0.873, SVD 0.705</title></circle>
+<text x="617.9" y="169.1" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="608.9" cy="127.4" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology22_local1 | pathology | L1: EENT 0.873, SVD 0.770</title></circle>
+<text x="617.9" y="119.4" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="608.9" cy="112.1" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology22_local1 | pathology | L1: EENT 0.873, SVD 0.790</title></circle>
+<text x="617.9" y="104.1" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="608.9" cy="192.4" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology22_local5 | pathology | L5: EENT 0.873, SVD 0.685</title></circle>
+<text x="617.9" y="184.4" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="608.9" cy="234.4" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1 | pathology_source_tilt | L1: EENT 0.873, SVD 0.630</title></circle>
+<text x="617.9" y="226.4" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="608.9" cy="150.3" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1 | pathology_source_tilt | L1: EENT 0.873, SVD 0.740</title></circle>
+<text x="617.9" y="142.3" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="608.9" cy="119.7" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1 | pathology_source_tilt | L1: EENT 0.873, SVD 0.780</title></circle>
+<text x="617.9" y="111.7" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="608.9" cy="119.7" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1 | pathology_source_tilt | L1: EENT 0.873, SVD 0.780</title></circle>
+<text x="617.9" y="111.7" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="608.9" cy="196.2" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5 | pathology_source_tilt | L5: EENT 0.873, SVD 0.680</title></circle>
+<text x="617.9" y="188.2" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="596.7" cy="230.6" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5 | pathology_source_tilt | L5: EENT 0.864, SVD 0.635</title></circle>
+<text x="605.7" y="222.6" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="596.7" cy="192.4" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5 | pathology_source_tilt | L5: EENT 0.864, SVD 0.685</title></circle>
+<text x="605.7" y="184.4" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="584.5" cy="211.5" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1 | pathology_source_tilt | L1: EENT 0.856, SVD 0.660</title></circle>
+<text x="593.5" y="203.5" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="584.5" cy="245.9" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_voicing_local1 | pathology_voicing | L1: EENT 0.856, SVD 0.615</title></circle>
+<text x="593.5" y="237.9" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="584.5" cy="253.5" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_voicing_local1 | pathology_voicing | L1: EENT 0.856, SVD 0.605</title></circle>
+<text x="593.5" y="245.5" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="584.5" cy="180.9" r="6" fill="#C9862A"><title>paper2601_splitmae_runs_ablation_pathology_voicing_local1 | pathology_voicing | L1: EENT 0.856, SVD 0.700</title></circle>
+<text x="593.5" y="172.9" class="point-label" fill="#C9862A">paper2601_splitmae_runs_ablatio...</text>
+<circle cx="731.0" cy="249.7" r="6" fill="#777777"><title>all131 | eent_train_scaling: EENT 0.958, SVD 0.610</title></circle>
+<text x="740.0" y="241.7" class="point-label" fill="#777777">all131 | eent_train_scaling</text>
+<circle cx="731.0" cy="200.0" r="6" fill="#777777"><title>all131 | svd_independent_scaling: EENT 0.958, SVD 0.675</title></circle>
+<text x="740.0" y="192.0" class="point-label" fill="#777777">all131 | svd_independent_scaling</text>
+<circle cx="731.0" cy="249.7" r="6" fill="#777777"><title>paper2601_splitmae_runs_local5 | L5: EENT 0.958, SVD 0.610</title></circle>
+<text x="740.0" y="241.7" class="point-label" fill="#777777">paper2601_splitmae_runs_local5 ...</text>
+<circle cx="731.0" cy="200.0" r="6" fill="#777777"><title>paper2601_splitmae_runs_local5 | L5: EENT 0.958, SVD 0.675</title></circle>
+<text x="740.0" y="192.0" class="point-label" fill="#777777">paper2601_splitmae_runs_local5 ...</text>
+<circle cx="706.6" cy="249.7" r="6" fill="#777777"><title>paper2601_splitmae_runs_local1 | L1: EENT 0.941, SVD 0.610</title></circle>
+<text x="715.6" y="241.7" class="point-label" fill="#777777">paper2601_splitmae_runs_local1 ...</text>
+<circle cx="706.6" cy="169.4" r="6" fill="#777777"><title>paper2601_splitmae_runs_local1 | L1: EENT 0.941, SVD 0.715</title></circle>
+<text x="715.6" y="161.4" class="point-label" fill="#777777">paper2601_splitmae_runs_local1 ...</text>
+<circle cx="657.8" cy="146.5" r="6" fill="#777777"><title>pathology_voicing | eent_train_scaling: EENT 0.907, SVD 0.745</title></circle>
+<text x="666.8" y="138.5" class="point-label" fill="#777777">pathology_voicing | eent_train_...</text>
+<circle cx="657.8" cy="150.3" r="6" fill="#777777"><title>pathology_voicing | svd_independent_scaling: EENT 0.907, SVD 0.740</title></circle>
+<text x="666.8" y="142.3" class="point-label" fill="#777777">pathology_voicing | svd_indepen...</text>
+<circle cx="633.4" cy="123.6" r="6" fill="#777777"><title>paper2601_splitmae_runs_stable_static_gated_clip_local5 | gated | all | L5 | clip3.0: EENT 0.890, SVD 0.775</title></circle>
+<text x="642.4" y="115.6" class="point-label" fill="#777777">paper2601_splitmae_runs_stable_...</text>
+<circle cx="633.4" cy="150.3" r="6" fill="#777777"><title>pathology22 | eent_train_scaling: EENT 0.890, SVD 0.740</title></circle>
+<text x="642.4" y="142.3" class="point-label" fill="#777777">pathology22 | eent_train_scaling</text>
+<circle cx="633.4" cy="142.7" r="6" fill="#777777"><title>pathology22 | svd_independent_scaling: EENT 0.890, SVD 0.750</title></circle>
+<text x="642.4" y="134.7" class="point-label" fill="#777777">pathology22 | svd_independent_s...</text>
+<circle cx="633.4" cy="123.6" r="6" fill="#777777"><title>pathology_source_tilt | eent_train_scaling: EENT 0.890, SVD 0.775</title></circle>
+<text x="642.4" y="115.6" class="point-label" fill="#777777">pathology_source_tilt | eent_tr...</text>
+<circle cx="633.4" cy="115.9" r="6" fill="#777777"><title>pathology_source_tilt | svd_independent_scaling: EENT 0.890, SVD 0.785</title></circle>
+<text x="642.4" y="107.9" class="point-label" fill="#777777">pathology_source_tilt | svd_ind...</text>
+<circle cx="474.7" cy="180.9" r="6" fill="#777777"><title>paper2601_splitmae_runs_ssast_like_local5 | L5: EENT 0.780, SVD 0.700</title></circle>
+<text x="483.7" y="172.9" class="point-label" fill="#777777">paper2601_splitmae_runs_ssast_l...</text>
+</svg>
+
+<h2>SVD ranking / accuracy views</h2>
+<div class="grid">
+<svg viewBox="0 0 820 562" class="chart small">
+<rect width="820" height="562" rx="12" fill="#fff"/>
+<text x="22" y="30" class="chart-title">Top SVD AUC rows</text>
+<text x="22" y="67" class="bar-label">centralized CNN</text>
+<rect x="260" y="52" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="52" width="491.5" height="16" fill="#3867B7"/>
+<text x="796" y="65" class="bar-value">0.934</text>
+<text x="22" y="95" class="bar-label">split SSAST</text>
+<rect x="260" y="80" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="80" width="486.2" height="16" fill="#3867B7"/>
+<text x="796" y="93" class="bar-value">0.924</text>
+<text x="22" y="123" class="bar-label">split CNN</text>
+<rect x="260" y="108" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="108" width="483.5" height="16" fill="#3867B7"/>
+<text x="796" y="121" class="bar-value">0.919</text>
+<text x="22" y="151" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="136" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="136" width="452.5" height="16" fill="#C9862A"/>
+<text x="796" y="149" class="bar-value">0.860</text>
+<text x="22" y="179" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="164" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="164" width="452.5" height="16" fill="#C9862A"/>
+<text x="796" y="177" class="bar-value">0.860</text>
+<text x="22" y="207" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="192" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="192" width="442.1" height="16" fill="#C9862A"/>
+<text x="796" y="205" class="bar-value">0.841</text>
+<text x="22" y="235" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="220" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="220" width="442.1" height="16" fill="#C9862A"/>
+<text x="796" y="233" class="bar-value">0.841</text>
+<text x="22" y="263" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="248" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="248" width="440.7" height="16" fill="#C9862A"/>
+<text x="796" y="261" class="bar-value">0.838</text>
+<text x="22" y="291" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="276" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="276" width="440.7" height="16" fill="#C9862A"/>
+<text x="796" y="289" class="bar-value">0.838</text>
+<text x="22" y="319" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="304" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="304" width="440.7" height="16" fill="#C9862A"/>
+<text x="796" y="317" class="bar-value">0.838</text>
+<text x="22" y="347" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="332" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="332" width="439.9" height="16" fill="#C9862A"/>
+<text x="796" y="345" class="bar-value">0.836</text>
+<text x="22" y="375" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="360" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="360" width="439.9" height="16" fill="#C9862A"/>
+<text x="796" y="373" class="bar-value">0.836</text>
+<text x="22" y="403" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="388" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="388" width="439.9" height="16" fill="#C9862A"/>
+<text x="796" y="401" class="bar-value">0.836</text>
+<text x="22" y="431" class="bar-label">paper2601_splitmae_runs_control_p...</text>
+<rect x="260" y="416" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="416" width="439.6" height="16" fill="#6D5AA7"/>
+<text x="796" y="429" class="bar-value">0.836</text>
+<text x="22" y="459" class="bar-label">paper2601_splitmae_runs_control_p...</text>
+<rect x="260" y="444" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="444" width="439.6" height="16" fill="#6D5AA7"/>
+<text x="796" y="457" class="bar-value">0.836</text>
+<text x="22" y="487" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="472" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="472" width="438.6" height="16" fill="#C9862A"/>
+<text x="796" y="485" class="bar-value">0.834</text>
+<text x="22" y="515" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="500" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="500" width="438.6" height="16" fill="#C9862A"/>
+<text x="796" y="513" class="bar-value">0.834</text>
+<text x="22" y="543" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="528" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="528" width="438.6" height="16" fill="#C9862A"/>
+<text x="796" y="541" class="bar-value">0.834</text>
+</svg>
+<svg viewBox="0 0 820 562" class="chart small">
+<rect width="820" height="562" rx="12" fill="#fff"/>
+<text x="22" y="30" class="chart-title">Top SVD accuracy rows</text>
+<text x="22" y="67" class="bar-label">split SSAST</text>
+<rect x="260" y="52" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="52" width="436.6" height="16" fill="#3867B7"/>
+<text x="796" y="65" class="bar-value">0.830</text>
+<text x="22" y="95" class="bar-label">split CNN</text>
+<rect x="260" y="80" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="80" width="415.5" height="16" fill="#3867B7"/>
+<text x="796" y="93" class="bar-value">0.790</text>
+<text x="22" y="123" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="108" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="108" width="415.5" height="16" fill="#C9862A"/>
+<text x="796" y="121" class="bar-value">0.790</text>
+<text x="22" y="151" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="136" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="136" width="412.9" height="16" fill="#C9862A"/>
+<text x="796" y="149" class="bar-value">0.785</text>
+<text x="22" y="179" class="bar-label">pathology_source_tilt | svd_indep...</text>
+<rect x="260" y="164" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="164" width="412.9" height="16" fill="#C9862A"/>
+<text x="796" y="177" class="bar-value">0.785</text>
+<text x="22" y="207" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="192" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="192" width="410.3" height="16" fill="#C9862A"/>
+<text x="796" y="205" class="bar-value">0.780</text>
+<text x="22" y="235" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="220" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="220" width="410.3" height="16" fill="#C9862A"/>
+<text x="796" y="233" class="bar-value">0.780</text>
+<text x="22" y="263" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="248" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="248" width="407.7" height="16" fill="#C9862A"/>
+<text x="796" y="261" class="bar-value">0.775</text>
+<text x="22" y="291" class="bar-label">paper2601_splitmae_runs_stable_st...</text>
+<rect x="260" y="276" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="276" width="407.7" height="16" fill="#C9862A"/>
+<text x="796" y="289" class="bar-value">0.775</text>
+<text x="22" y="319" class="bar-label">pathology_source_tilt | eent_trai...</text>
+<rect x="260" y="304" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="304" width="407.7" height="16" fill="#C9862A"/>
+<text x="796" y="317" class="bar-value">0.775</text>
+<text x="22" y="347" class="bar-label">centralized CNN</text>
+<rect x="260" y="332" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="332" width="405.0" height="16" fill="#3867B7"/>
+<text x="796" y="345" class="bar-value">0.770</text>
+<text x="22" y="375" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="360" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="360" width="405.0" height="16" fill="#C9862A"/>
+<text x="796" y="373" class="bar-value">0.770</text>
+<text x="22" y="403" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="388" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="388" width="394.5" height="16" fill="#C9862A"/>
+<text x="796" y="401" class="bar-value">0.750</text>
+<text x="22" y="431" class="bar-label">pathology22 | svd_independent_sca...</text>
+<rect x="260" y="416" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="416" width="394.5" height="16" fill="#C9862A"/>
+<text x="796" y="429" class="bar-value">0.750</text>
+<text x="22" y="459" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="444" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="444" width="391.9" height="16" fill="#C9862A"/>
+<text x="796" y="457" class="bar-value">0.745</text>
+<text x="22" y="487" class="bar-label">pathology_voicing | eent_train_sc...</text>
+<rect x="260" y="472" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="472" width="391.9" height="16" fill="#C9862A"/>
+<text x="796" y="485" class="bar-value">0.745</text>
+<text x="22" y="515" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="500" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="500" width="389.2" height="16" fill="#C9862A"/>
+<text x="796" y="513" class="bar-value">0.740</text>
+<text x="22" y="543" class="bar-label">paper2601_splitmae_runs_ablation_...</text>
+<rect x="260" y="528" width="526" height="16" fill="#ECE7DD"/>
+<rect x="260" y="528" width="389.2" height="16" fill="#C9862A"/>
+<text x="796" y="541" class="bar-value">0.740</text>
+</svg>
+</div>
+
+<h2>Combined /a/+/i/ patient-level table</h2>
+<p class="table-note">Core metrics are kept in the main table. Long notes and source paths are hidden from the columns and available on row hover. Rows marked <code>summary only</code> came from aggregate summary JSON and did not contain confusion matrices.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Result</th><th>Group</th><th>Protocol</th>
+<th>EENT Acc</th><th>EENT F1</th><th>EENT AUC</th><th>EENT CM</th>
+<th>SVD Acc</th><th>SVD F1</th><th>SVD AUC</th><th>SVD Spec</th><th>SVD CM</th>
+<th>Notes</th><th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>centralized CNN</td><td>baseline</td><td>fixed 0.5</td><td><span class="mid">0.932</span></td><td><span class="good">0.942</span></td><td><span class="good">0.973</span></td><td>[45 3; 5 65]</td><td><span class="mid">0.770</span></td><td><span class="good">0.810</span></td><td><span class="good">0.934</span></td><td><span class="mid">0.560</span></td><td>[56 44; 2 98]</td><td></td><td class='source'>saved_models/eval_results_fixed.json</td></tr>
+<tr><td>split CNN</td><td>baseline</td><td>fixed 0.5</td><td><span class="mid">0.932</span></td><td><span class="good">0.941</span></td><td><span class="good">0.979</span></td><td>[46 2; 6 64]</td><td><span class="mid">0.790</span></td><td><span class="good">0.822</span></td><td><span class="good">0.919</span></td><td><span class="mid">0.610</span></td><td>[61 39; 3 97]</td><td></td><td class='source'>saved_models/eval_results_split_fixed.json</td></tr>
+<tr><td>split SSAST</td><td>baseline</td><td>fixed 0.5</td><td><span class="mid">0.890</span></td><td><span class="mid">0.905</span></td><td><span class="mid">0.940</span></td><td>[43 5; 8 62]</td><td><span class="good">0.830</span></td><td><span class="good">0.835</span></td><td><span class="good">0.924</span></td><td><span class="good">0.800</span></td><td>[80 20; 14 86]</td><td>strong external accuracy</td><td class='source'>saved_models/eval_results_split_ssast_fixed.json</td></tr>
+<tr><td>paper2601_splitmae_runs_control_all131_gated_clip_local5 | gated | all | L5 | clip3.0</td><td>controlled</td><td>eent_validation_threshold</td><td><span class="good">0.941</span></td><td><span class="good">0.952</span></td><td><span class="good">0.979</span></td><td>[42 6; 1 69]</td><td><span class="bad">0.500</span></td><td><span class="bad">0.667</span></td><td><span class="mid">0.777</span></td><td><span class="bad">0.000</span></td><td>[0 100; 0 100]</td><td>strong EENT; all-positive or near all-positive</td><td class='source'>paper2601_splitmae_runs_control_all131_gated_clip_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</td></tr>
+<tr><td>paper2601_splitmae_runs_control_static_only_all131_local5 | static_only | all | L5 | clip3.0</td><td>controlled</td><td>eent_validation_threshold</td><td><span class="good">0.941</span></td><td><span class="good">0.950</span></td><td><span class="good">0.985</span></td><td>[45 3; 4 66]</td><td><span class="bad">0.500</span></td><td><span class="bad">0.667</span></td><td><span class="bad">0.636</span></td><td><span class="bad">0.000</span></td><td>[0 100; 0 100]</td><td>strong EENT; all-positive or near all-positive; weak ranking</td><td class='source'>paper2601_splitmae_runs_control_static_only_all131_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</td></tr>
+<tr><td>paper2601_splitmae_runs_control_all131_gated_clip_local5 | gated | all | L5 | clip3.0</td><td>controlled</td><td>fixed 0.5</td><td><span class="mid">0.932</span></td><td><span class="good">0.944</span></td><td><span class="good">0.979</span></td><td>[43 5; 3 67]</td><td><span class="bad">0.500</span></td><td><span class="bad">0.667</span></td><td><span class="mid">0.777</span></td><td><span class="bad">0.000</span></td><td>[0 100; 0 100]</td><td>all-positive or near all-positive</td><td class='source'>paper2601_splitmae_runs_control_all131_gated_clip_local5/ast_stage2_ai_eval_fixed.json</td></tr>
+<tr><td>paper2601_splitmae_runs_control_static_only_all131_local5 | static_only | all | L5 | clip3.0</td><td>controlled</td><td>fixed 0.5</td><td><span class="mid">0.924</span></td><td><span class="mid">0.939</span></td><td><span class="good">0.985</span></td><td>[40 8; 1 69]</td><td><span class="bad">0.500</span></td><td><span class="bad">0.667</span></td><td><span class="bad">0.636</span></td><td><span class="bad">0.000</span></td><td>[0 100; 0 100]</td><td>all-positive or near all-positive; weak ranking</td><td class='source'>paper2601_splitmae_runs_control_static_only_all131_local5/ast_stage2_ai_eval_fixed.json</td></tr>
+<tr><td>paper2601_splitmae_runs_control_source_tilt_gated_clip_local5 | gated | pathology_source_tilt | L5 | clip3.0</td><td>controlled</td><td>fixed 0.5</td><td><span class="mid">0.915</span></td><td><span class="mid">0.929</span></td><td><span class="mid">0.947</span></td><td>[43 5; 5 65]</td><td><span class="mid">0.715</span></td><td><span class="mid">0.753</span></td><td><span class="mid">0.807</span></td><td><span class="mid">0.560</span></td><td>[56 44; 13 87]</td><td></td><td class='source'>paper2601_splitmae_runs_control_source_tilt_gated_clip_local5/ast_stage2_ai_eval_fixed.json</td></tr>
+<tr><td>paper2601_splitmae_runs_control_mae_only_local5 | audio_only | all | L5</td><td>controlled</td><td>eent_validation_threshold</td><td><span class="mid">0.898</span></td><td><span class="mid">0.918</span></td><td><span class="mid">0.936</span></td><td>[39 9; 3 67]</td><td><span class="mid">0.720</span></td><td><span class="mid">0.763</span></td><td><span class="mid">0.826</span></td><td><span class="mid">0.540</span></td><td>[54 46; 10 90]</td><td></td><td class='source'>paper2601_splitmae_runs_control_mae_only_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</td></tr>
+<tr><td>paper2601_splitmae_runs_control_mae_only_local5 | audio_only | all | L5</td><td>controlled</td><td>fixed 0.5</td><td><span class="mid">0.890</span></td><td><span class="mid">0.912</span></td><td><span class="mid">0.936</span></td><td>[38 10; 3 67]</td><td><span class="mid">0.710</span></td><td><span class="mid">0.758</span></td><td><span class="mid">0.826</span></td><td><span class="mid">0.510</span></td><td>[51 49; 9 91]</td><td></td><td class='source'>paper2601_splitmae_runs_control_mae_only_local5/ast_stage2_ai_eval_fixed.json</td></tr>
+<tr><td>paper2601_splitmae_runs_control_pathology22_gated_clip_local5 | gated | pathology | L5 | clip3.0</td><td>controlled</td><td>fixed 0.5</td><td><span class="mid">0.881</span></td><td><span class="mid">0.904</span></td><td><span class="mid">0.923</span></td><td>[38 10; 4 66]</td><td><span class="mid">0.705</span></td><td><span class="mid">0.759</span></td><td><span class="mid">0.836</span></td><td><span class="mid">0.480</span></td><td>[48 52; 7 93]</td><td></td><td class='source'>paper2601_splitmae_runs_control_pathology22_gated_clip_local5/ast_stage2_ai_eval_fixed.json</td></tr>
+<tr><td>paper2601_splitmae_runs_control_pathology22_gated_clip_local5 | gated | pathology | L5 | clip3.0</td><td>controlled</td><td>eent_validation_threshold</td><td><span class="bad">0.864</span></td><td><span class="mid">0.884</span></td><td><span class="mid">0.923</span></td><td>[41 7; 9 61]</td><td><span class="mid">0.720</span></td><td><span class="mid">0.748</span></td><td><span class="mid">0.836</span></td><td><span class="mid">0.610</span></td><td>[61 39; 17 83]</td><td></td><td class='source'>paper2601_splitmae_runs_control_pathology22_gated_clip_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</td></tr>
+<tr><td>paper2601_splitmae_runs_control_source_tilt_gated_clip_local5 | gated | pathology_source_tilt | L5 | clip3.0</td><td>controlled</td><td>eent_validation_threshold</td><td><span class="bad">0.856</span></td><td><span class="mid">0.884</span></td><td><span class="mid">0.947</span></td><td>[36 12; 5 65]</td><td><span class="bad">0.650</span></td><td><span class="mid">0.724</span></td><td><span class="mid">0.807</span></td><td><span class="bad">0.380</span></td><td>[38 62; 8 92]</td><td></td><td class='source'>paper2601_splitmae_runs_control_source_tilt_gated_clip_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</td></tr>
+<tr><td>paper2601_splitmae_runs_local5 | L5</td><td>paper2601</td><td>fixed 0.5</td><td><span class="good">0.941</span></td><td><span class="good">0.951</span></td><td><span class="good">0.987</span></td><td>[43 5; 2 68]</td><td><span class="bad">0.500</span></td><td><span class="bad">0.667</span></td><td><span class="bad">0.593</span></td><td><span class="bad">0.000</span></td><td>[0 100; 0 100]</td><td>strong EENT; all-positive or near all-positive; weak ranking</td><td class='source'>paper2601_splitmae_runs_local5/ast_stage2_ai_eval.json</td></tr>
+<tr><td>paper2601_splitmae_runs_local5 | L5</td><td>paper2601</td><td>eent_validation_threshold</td><td><span class="good">0.941</span></td><td><span class="good">0.951</span></td><td><span class="good">0.987</span></td><td>[43 5; 2 68]</td><td><span class="bad">0.500</span></td><td><span class="bad">0.667</span></td><td><span class="bad">0.593</span></td><td><span class="bad">0.000</span></td><td>[0 100; 0 100]</td><td>strong EENT; all-positive or near all-positive; weak ranking</td><td class='source'>paper2601_splitmae_runs_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</td></tr>
+<tr><td>paper2601_splitmae_runs_local1 | L1</td><td>paper2601</td><td>fixed 0.5</td><td><span class="mid">0.932</span></td><td><span class="good">0.945</span></td><td><span class="good">0.983</span></td><td>[41 7; 1 69]</td><td><span class="bad">0.500</span></td><td><span class="bad">0.667</span></td><td><span class="bad">0.590</span></td><td><span class="bad">0.000</span></td><td>[0 100; 0 100]</td><td>all-positive or near all-positive; weak ranking</td><td class='source'>paper2601_splitmae_runs_local1/ast_stage2_ai_eval.json</td></tr>
+<tr><td>paper2601_splitmae_runs_local1 | L1</td><td>paper2601</td><td>eent_validation_threshold</td><td><span class="mid">0.924</span></td><td><span class="mid">0.937</span></td><td><span class="good">0.983</span></td><td>[42 6; 3 67]</td><td><span class="bad">0.500</span></td><td><span class="bad">0.667</span></td><td><span class="bad">0.590</span></td><td><span class="bad">0.000</span></td><td>[0 100; 0 100]</td><td>all-positive or near all-positive; weak ranking</td><td class='source'>paper2601_splitmae_runs_local1/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</td></tr>
+<tr><td>paper2601_splitmae_runs_stable_static_gated_clip_local5 | gated | all | L5 | clip3.0</td><td>paper2601</td><td>eent_validation_threshold</td><td><span class="bad">0.873</span></td><td><span class="mid">0.895</span></td><td><span class="mid">0.929</span></td><td>[39 9; 6 64]</td><td><span class="mid">0.705</span></td><td><span class="mid">0.755</span></td><td><span class="mid">0.829</span></td><td><span class="mid">0.500</span></td><td>[50 50; 9 91]</td><td></td><td class='source'>paper2601_splitmae_runs_stable_static_gated_clip_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</td></tr>
+<tr><td>paper2601_splitmae_runs_stable_static_gated_clip_local5 | gated | all | L5 | clip3.0</td><td>paper2601</td><td>fixed 0.5</td><td><span class="bad">0.873</span></td><td><span class="mid">0.895</span></td><td><span class="mid">0.929</span></td><td>[39 9; 6 64]</td><td><span class="mid">0.730</span></td><td><span class="mid">0.763</span></td><td><span class="mid">0.829</span></td><td><span class="mid">0.590</span></td><td>[59 41; 13 87]</td><td></td><td class='source'>paper2601_splitmae_runs_stable_static_gated_clip_local5/ast_stage2_ai_eval_fixed.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ssast_like_local5 | L5</td><td>paper2601</td><td>eent_validation_threshold</td><td><span class="bad">0.763</span></td><td><span class="bad">0.813</span></td><td><span class="bad">0.840</span></td><td>[29 19; 9 61]</td><td><span class="bad">0.675</span></td><td><span class="mid">0.703</span></td><td><span class="mid">0.744</span></td><td><span class="mid">0.580</span></td><td>[58 42; 23 77]</td><td></td><td class='source'>paper2601_splitmae_runs_ssast_like_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ssast_like_local5 | L5</td><td>paper2601</td><td>fixed 0.5</td><td><span class="bad">0.763</span></td><td><span class="bad">0.816</span></td><td><span class="bad">0.840</span></td><td>[28 20; 8 62]</td><td><span class="bad">0.645</span></td><td><span class="mid">0.700</span></td><td><span class="mid">0.744</span></td><td><span class="mid">0.460</span></td><td>[46 54; 17 83]</td><td></td><td class='source'>paper2601_splitmae_runs_ssast_like_local5/ast_stage2_ai_eval_fixed.json</td></tr>
+<tr><td>paper2601_splitmae_runs_local5 | L5</td><td>scaling diagnostic</td><td>fixed 0.5 + SVD-independent static scaling</td><td><span class="good">0.941</span></td><td><span class="good">0.951</span></td><td><span class="good">0.987</span></td><td>[43 5; 2 68]</td><td><span class="bad">0.645</span></td><td><span class="mid">0.700</span></td><td><span class="mid">0.723</span></td><td><span class="mid">0.460</span></td><td>[46 54; 17 83]</td><td>strong EENT</td><td class='source'>paper2601_splitmae_runs_local5/ast_stage2_ai_eval_svd_independent_static_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_local1 | L1</td><td>scaling diagnostic</td><td>fixed 0.5 + SVD-independent static scaling</td><td><span class="mid">0.932</span></td><td><span class="good">0.945</span></td><td><span class="good">0.983</span></td><td>[41 7; 1 69]</td><td><span class="bad">0.670</span></td><td><span class="mid">0.716</span></td><td><span class="mid">0.761</span></td><td><span class="mid">0.510</span></td><td>[51 49; 17 83]</td><td></td><td class='source'>paper2601_splitmae_runs_local1/ast_stage2_ai_eval_svd_independent_static_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_voicing_local5 | pathology_voicing | L5</td><td>static ablation</td><td>fixed 0.5 + EENT-train static scaling</td><td><span class="mid">0.907</span></td><td><span class="mid">0.923</span></td><td><span class="mid">0.940</span></td><td>[41 7; 4 66]</td><td><span class="bad">0.655</span></td><td><span class="mid">0.738</span></td><td><span class="mid">0.811</span></td><td><span class="bad">0.340</span></td><td>[34 66; 3 97]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_voicing_local5/ast_stage2_ai_eval_eent_train_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_voicing_local5 | pathology_voicing | L5</td><td>static ablation</td><td>fixed 0.5 + SVD-independent static scaling</td><td><span class="mid">0.907</span></td><td><span class="mid">0.923</span></td><td><span class="mid">0.940</span></td><td>[41 7; 4 66]</td><td><span class="mid">0.735</span></td><td><span class="mid">0.780</span></td><td><span class="mid">0.811</span></td><td><span class="mid">0.530</span></td><td>[53 47; 6 94]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_voicing_local5/ast_stage2_ai_eval_svd_independent_static_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_voicing_local5 | pathology_voicing | L5</td><td>static ablation</td><td>Youden/best_threshold + EENT-train static scaling</td><td><span class="mid">0.907</span></td><td><span class="mid">0.921</span></td><td><span class="mid">0.940</span></td><td>[43 5; 6 64]</td><td><span class="mid">0.745</span></td><td><span class="mid">0.738</span></td><td><span class="mid">0.811</span></td><td><span class="good">0.770</span></td><td>[77 23; 28 72]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_voicing_local5/ast_stage2_ai_eval_youden_eent_train_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_voicing_local5 | pathology_voicing | L5</td><td>static ablation</td><td>Youden/best_threshold + SVD-independent static scaling</td><td><span class="mid">0.907</span></td><td><span class="mid">0.921</span></td><td><span class="mid">0.940</span></td><td>[43 5; 6 64]</td><td><span class="mid">0.740</span></td><td><span class="mid">0.782</span></td><td><span class="mid">0.811</span></td><td><span class="mid">0.550</span></td><td>[55 45; 7 93]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_voicing_local5/ast_stage2_ai_eval_youden_svd_independent_static_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_voicing_local5 | pathology_voicing | L5</td><td>static ablation</td><td>eent_validation_threshold</td><td><span class="mid">0.898</span></td><td><span class="mid">0.915</span></td><td><span class="mid">0.940</span></td><td>[41 7; 5 65]</td><td><span class="bad">0.655</span></td><td><span class="mid">0.736</span></td><td><span class="mid">0.811</span></td><td><span class="bad">0.350</span></td><td>[35 65; 4 96]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_voicing_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology22_local5 | pathology | L5</td><td>static ablation</td><td>fixed 0.5 + EENT-train static scaling</td><td><span class="mid">0.890</span></td><td><span class="mid">0.912</span></td><td><span class="mid">0.930</span></td><td>[38 10; 3 67]</td><td><span class="mid">0.700</span></td><td><span class="mid">0.762</span></td><td><span class="mid">0.820</span></td><td><span class="mid">0.440</span></td><td>[44 56; 4 96]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology22_local5/ast_stage2_ai_eval_eent_train_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology22_local5 | pathology | L5</td><td>static ablation</td><td>fixed 0.5 + SVD-independent static scaling</td><td><span class="mid">0.890</span></td><td><span class="mid">0.912</span></td><td><span class="mid">0.930</span></td><td>[38 10; 3 67]</td><td><span class="mid">0.720</span></td><td><span class="mid">0.763</span></td><td><span class="mid">0.828</span></td><td><span class="mid">0.540</span></td><td>[54 46; 10 90]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology22_local5/ast_stage2_ai_eval_svd_independent_static_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology22_local5 | pathology | L5</td><td>static ablation</td><td>Youden/best_threshold + EENT-train static scaling</td><td><span class="mid">0.890</span></td><td><span class="mid">0.908</span></td><td><span class="mid">0.930</span></td><td>[41 7; 6 64]</td><td><span class="mid">0.740</span></td><td><span class="mid">0.740</span></td><td><span class="mid">0.820</span></td><td><span class="mid">0.740</span></td><td>[74 26; 26 74]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology22_local5/ast_stage2_ai_eval_youden_eent_train_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology22_local5 | pathology | L5</td><td>static ablation</td><td>Youden/best_threshold + SVD-independent static scaling</td><td><span class="mid">0.890</span></td><td><span class="mid">0.908</span></td><td><span class="mid">0.930</span></td><td>[41 7; 6 64]</td><td><span class="mid">0.750</span></td><td><span class="mid">0.745</span></td><td><span class="mid">0.828</span></td><td><span class="good">0.770</span></td><td>[77 23; 27 73]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology22_local5/ast_stage2_ai_eval_youden_svd_independent_static_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5 | pathology_source_tilt | L5</td><td>static ablation</td><td>Youden/best_threshold + EENT-train static scaling</td><td><span class="mid">0.890</span></td><td><span class="mid">0.906</span></td><td><span class="mid">0.924</span></td><td>[42 6; 7 63]</td><td><span class="mid">0.775</span></td><td><span class="mid">0.776</span></td><td><span class="mid">0.834</span></td><td><span class="good">0.770</span></td><td>[77 23; 22 78]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5/ast_stage2_ai_eval_youden_eent_train_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5 | pathology_source_tilt | L5</td><td>static ablation</td><td>Youden/best_threshold + SVD-independent static scaling</td><td><span class="mid">0.890</span></td><td><span class="mid">0.906</span></td><td><span class="mid">0.924</span></td><td>[42 6; 7 63]</td><td><span class="mid">0.785</span></td><td><span class="mid">0.777</span></td><td><span class="mid">0.831</span></td><td><span class="good">0.820</span></td><td>[82 18; 25 75]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5/ast_stage2_ai_eval_youden_svd_independent_static_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology22_local1 | pathology | L1</td><td>static ablation</td><td>eent_validation_threshold</td><td><span class="mid">0.881</span></td><td><span class="mid">0.903</span></td><td><span class="mid">0.928</span></td><td>[39 9; 5 65]</td><td><span class="bad">0.630</span></td><td><span class="mid">0.720</span></td><td><span class="mid">0.838</span></td><td><span class="bad">0.310</span></td><td>[31 69; 5 95]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology22_local1/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_voicing_local1 | pathology_voicing | L1</td><td>static ablation</td><td>Youden/best_threshold + EENT-train static scaling</td><td><span class="mid">0.881</span></td><td><span class="mid">0.907</span></td><td><span class="mid">0.912</span></td><td>[36 12; 2 68]</td><td><span class="mid">0.740</span></td><td><span class="mid">0.711</span></td><td><span class="mid">0.811</span></td><td><span class="good">0.840</span></td><td>[84 16; 36 64]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_voicing_local1/ast_stage2_ai_eval_youden_eent_train_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_voicing_local1 | pathology_voicing | L1</td><td>static ablation</td><td>Youden/best_threshold + SVD-independent static scaling</td><td><span class="mid">0.881</span></td><td><span class="mid">0.907</span></td><td><span class="mid">0.912</span></td><td>[36 12; 2 68]</td><td><span class="mid">0.740</span></td><td><span class="mid">0.705</span></td><td><span class="mid">0.826</span></td><td><span class="good">0.860</span></td><td>[86 14; 38 62]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_voicing_local1/ast_stage2_ai_eval_youden_svd_independent_static_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology22_local1 | pathology | L1</td><td>static ablation</td><td>fixed 0.5 + EENT-train static scaling</td><td><span class="bad">0.873</span></td><td><span class="mid">0.895</span></td><td><span class="mid">0.928</span></td><td>[39 9; 6 64]</td><td><span class="bad">0.645</span></td><td><span class="mid">0.728</span></td><td><span class="mid">0.838</span></td><td><span class="bad">0.340</span></td><td>[34 66; 5 95]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology22_local1/ast_stage2_ai_eval_eent_train_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology22_local1 | pathology | L1</td><td>static ablation</td><td>fixed 0.5 + SVD-independent static scaling</td><td><span class="bad">0.873</span></td><td><span class="mid">0.895</span></td><td><span class="mid">0.928</span></td><td>[39 9; 6 64]</td><td><span class="mid">0.705</span></td><td><span class="mid">0.753</span></td><td><span class="mid">0.841</span></td><td><span class="mid">0.510</span></td><td>[51 49; 10 90]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology22_local1/ast_stage2_ai_eval_svd_independent_static_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology22_local1 | pathology | L1</td><td>static ablation</td><td>Youden/best_threshold + EENT-train static scaling</td><td><span class="bad">0.873</span></td><td><span class="mid">0.891</span></td><td><span class="mid">0.928</span></td><td>[42 6; 9 61]</td><td><span class="mid">0.770</span></td><td><span class="mid">0.779</span></td><td><span class="mid">0.838</span></td><td><span class="mid">0.730</span></td><td>[73 27; 19 81]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology22_local1/ast_stage2_ai_eval_youden_eent_train_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology22_local1 | pathology | L1</td><td>static ablation</td><td>Youden/best_threshold + SVD-independent static scaling</td><td><span class="bad">0.873</span></td><td><span class="mid">0.891</span></td><td><span class="mid">0.928</span></td><td>[42 6; 9 61]</td><td><span class="mid">0.790</span></td><td><span class="mid">0.788</span></td><td><span class="mid">0.841</span></td><td><span class="good">0.800</span></td><td>[80 20; 22 78]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology22_local1/ast_stage2_ai_eval_youden_svd_independent_static_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology22_local5 | pathology | L5</td><td>static ablation</td><td>eent_validation_threshold</td><td><span class="bad">0.873</span></td><td><span class="mid">0.897</span></td><td><span class="mid">0.930</span></td><td>[38 10; 5 65]</td><td><span class="bad">0.685</span></td><td><span class="mid">0.739</span></td><td><span class="mid">0.820</span></td><td><span class="mid">0.480</span></td><td>[48 52; 11 89]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology22_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1 | pathology_source_tilt | L1</td><td>static ablation</td><td>fixed 0.5 + EENT-train static scaling</td><td><span class="bad">0.873</span></td><td><span class="mid">0.895</span></td><td><span class="mid">0.916</span></td><td>[39 9; 6 64]</td><td><span class="bad">0.630</span></td><td><span class="mid">0.724</span></td><td><span class="mid">0.836</span></td><td><span class="bad">0.290</span></td><td>[29 71; 3 97]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1/ast_stage2_ai_eval_eent_train_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1 | pathology_source_tilt | L1</td><td>static ablation</td><td>fixed 0.5 + SVD-independent static scaling</td><td><span class="bad">0.873</span></td><td><span class="mid">0.895</span></td><td><span class="mid">0.916</span></td><td>[39 9; 6 64]</td><td><span class="mid">0.740</span></td><td><span class="mid">0.768</span></td><td><span class="good">0.860</span></td><td><span class="mid">0.620</span></td><td>[62 38; 14 86]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1/ast_stage2_ai_eval_svd_independent_static_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1 | pathology_source_tilt | L1</td><td>static ablation</td><td>Youden/best_threshold + EENT-train static scaling</td><td><span class="bad">0.873</span></td><td><span class="mid">0.895</span></td><td><span class="mid">0.916</span></td><td>[39 9; 6 64]</td><td><span class="mid">0.780</span></td><td><span class="mid">0.741</span></td><td><span class="mid">0.836</span></td><td><span class="good">0.930</span></td><td>[93 7; 37 63]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1/ast_stage2_ai_eval_youden_eent_train_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1 | pathology_source_tilt | L1</td><td>static ablation</td><td>Youden/best_threshold + SVD-independent static scaling</td><td><span class="bad">0.873</span></td><td><span class="mid">0.895</span></td><td><span class="mid">0.916</span></td><td>[39 9; 6 64]</td><td><span class="mid">0.780</span></td><td><span class="mid">0.741</span></td><td><span class="good">0.860</span></td><td><span class="good">0.930</span></td><td>[93 7; 37 63]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1/ast_stage2_ai_eval_youden_svd_independent_static_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5 | pathology_source_tilt | L5</td><td>static ablation</td><td>eent_validation_threshold</td><td><span class="bad">0.873</span></td><td><span class="mid">0.897</span></td><td><span class="mid">0.924</span></td><td>[38 10; 5 65]</td><td><span class="bad">0.680</span></td><td><span class="mid">0.742</span></td><td><span class="mid">0.834</span></td><td><span class="mid">0.440</span></td><td>[44 56; 8 92]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5 | pathology_source_tilt | L5</td><td>static ablation</td><td>fixed 0.5 + EENT-train static scaling</td><td><span class="bad">0.864</span></td><td><span class="mid">0.890</span></td><td><span class="mid">0.924</span></td><td>[37 11; 5 65]</td><td><span class="bad">0.635</span></td><td><span class="mid">0.722</span></td><td><span class="mid">0.834</span></td><td><span class="bad">0.320</span></td><td>[32 68; 5 95]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5/ast_stage2_ai_eval_eent_train_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5 | pathology_source_tilt | L5</td><td>static ablation</td><td>fixed 0.5 + SVD-independent static scaling</td><td><span class="bad">0.864</span></td><td><span class="mid">0.890</span></td><td><span class="mid">0.924</span></td><td>[37 11; 5 65]</td><td><span class="bad">0.685</span></td><td><span class="mid">0.739</span></td><td><span class="mid">0.831</span></td><td><span class="mid">0.480</span></td><td>[48 52; 11 89]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5/ast_stage2_ai_eval_svd_independent_static_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1 | pathology_source_tilt | L1</td><td>static ablation</td><td>eent_validation_threshold</td><td><span class="bad">0.856</span></td><td><span class="bad">0.879</span></td><td><span class="mid">0.916</span></td><td>[39 9; 8 62]</td><td><span class="bad">0.660</span></td><td><span class="mid">0.736</span></td><td><span class="mid">0.836</span></td><td><span class="bad">0.370</span></td><td>[37 63; 5 95]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_voicing_local1 | pathology_voicing | L1</td><td>static ablation</td><td>fixed 0.5 + EENT-train static scaling</td><td><span class="bad">0.856</span></td><td><span class="mid">0.881</span></td><td><span class="mid">0.912</span></td><td>[38 10; 7 63]</td><td><span class="bad">0.615</span></td><td><span class="mid">0.716</span></td><td><span class="mid">0.811</span></td><td><span class="bad">0.260</span></td><td>[26 74; 3 97]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_voicing_local1/ast_stage2_ai_eval_eent_train_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_voicing_local1 | pathology_voicing | L1</td><td>static ablation</td><td>eent_validation_threshold</td><td><span class="bad">0.856</span></td><td><span class="mid">0.883</span></td><td><span class="mid">0.912</span></td><td>[37 11; 6 64]</td><td><span class="bad">0.605</span></td><td><span class="mid">0.713</span></td><td><span class="mid">0.811</span></td><td><span class="bad">0.230</span></td><td>[23 77; 2 98]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_voicing_local1/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ablation_pathology_voicing_local1 | pathology_voicing | L1</td><td>static ablation</td><td>fixed 0.5 + SVD-independent static scaling</td><td><span class="bad">0.856</span></td><td><span class="mid">0.881</span></td><td><span class="mid">0.912</span></td><td>[38 10; 7 63]</td><td><span class="mid">0.700</span></td><td><span class="mid">0.746</span></td><td><span class="mid">0.826</span></td><td><span class="mid">0.520</span></td><td>[52 48; 12 88]</td><td></td><td class='source'>paper2601_splitmae_runs_ablation_pathology_voicing_local1/ast_stage2_ai_eval_svd_independent_static_scaling.json</td></tr>
+<tr><td>all131 | eent_train_scaling</td><td>youden diagnostic</td><td>Youden/best_threshold + eent_train_scaling</td><td><span class="good">0.958</span></td><td><span class="good">0.964</span></td><td><span class="good">0.987</span></td><td></td><td><span class="bad">0.610</span></td><td><span class="bad">0.552</span></td><td><span class="bad">0.593</span></td><td><span class="mid">0.740</span></td><td></td><td>strong EENT; weak ranking</td><td class='source'>paper2601_splitmae_runs_youden_summary/youden_eval_summary.json</td></tr>
+<tr><td>all131 | svd_independent_scaling</td><td>youden diagnostic</td><td>Youden/best_threshold + svd_independent_scaling</td><td><span class="good">0.958</span></td><td><span class="good">0.964</span></td><td><span class="good">0.987</span></td><td></td><td><span class="bad">0.675</span></td><td><span class="bad">0.686</span></td><td><span class="mid">0.723</span></td><td><span class="mid">0.640</span></td><td></td><td>strong EENT</td><td class='source'>paper2601_splitmae_runs_youden_summary/youden_eval_summary.json</td></tr>
+<tr><td>paper2601_splitmae_runs_local5 | L5</td><td>youden diagnostic</td><td>Youden/best_threshold + EENT-train static scaling</td><td><span class="good">0.958</span></td><td><span class="good">0.964</span></td><td><span class="good">0.987</span></td><td>[46 2; 3 67]</td><td><span class="bad">0.610</span></td><td><span class="bad">0.552</span></td><td><span class="bad">0.593</span></td><td><span class="mid">0.740</span></td><td>[74 26; 52 48]</td><td>strong EENT; weak ranking</td><td class='source'>paper2601_splitmae_runs_local5/ast_stage2_ai_eval_youden_eent_train_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_local5 | L5</td><td>youden diagnostic</td><td>Youden/best_threshold + SVD-independent static scaling</td><td><span class="good">0.958</span></td><td><span class="good">0.964</span></td><td><span class="good">0.987</span></td><td>[46 2; 3 67]</td><td><span class="bad">0.675</span></td><td><span class="bad">0.686</span></td><td><span class="mid">0.723</span></td><td><span class="mid">0.640</span></td><td>[64 36; 29 71]</td><td>strong EENT</td><td class='source'>paper2601_splitmae_runs_local5/ast_stage2_ai_eval_youden_svd_independent_static_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_local1 | L1</td><td>youden diagnostic</td><td>Youden/best_threshold + EENT-train static scaling</td><td><span class="good">0.941</span></td><td><span class="good">0.948</span></td><td><span class="good">0.983</span></td><td>[47 1; 6 64]</td><td><span class="bad">0.610</span></td><td><span class="bad">0.435</span></td><td><span class="bad">0.590</span></td><td><span class="good">0.920</span></td><td>[92 8; 70 30]</td><td>strong EENT; weak ranking</td><td class='source'>paper2601_splitmae_runs_local1/ast_stage2_ai_eval_youden_eent_train_scaling.json</td></tr>
+<tr><td>paper2601_splitmae_runs_local1 | L1</td><td>youden diagnostic</td><td>Youden/best_threshold + SVD-independent static scaling</td><td><span class="good">0.941</span></td><td><span class="good">0.948</span></td><td><span class="good">0.983</span></td><td>[47 1; 6 64]</td><td><span class="mid">0.715</span></td><td><span class="mid">0.714</span></td><td><span class="mid">0.761</span></td><td><span class="mid">0.720</span></td><td>[72 28; 29 71]</td><td>strong EENT</td><td class='source'>paper2601_splitmae_runs_local1/ast_stage2_ai_eval_youden_svd_independent_static_scaling.json</td></tr>
+<tr><td>pathology_voicing | eent_train_scaling</td><td>youden diagnostic</td><td>Youden/best_threshold + eent_train_scaling</td><td><span class="mid">0.907</span></td><td><span class="mid">0.921</span></td><td><span class="mid">0.940</span></td><td></td><td><span class="mid">0.745</span></td><td><span class="mid">0.738</span></td><td><span class="mid">0.811</span></td><td><span class="good">0.770</span></td><td></td><td></td><td class='source'>paper2601_splitmae_runs_youden_summary/youden_eval_summary.json</td></tr>
+<tr><td>pathology_voicing | svd_independent_scaling</td><td>youden diagnostic</td><td>Youden/best_threshold + svd_independent_scaling</td><td><span class="mid">0.907</span></td><td><span class="mid">0.921</span></td><td><span class="mid">0.940</span></td><td></td><td><span class="mid">0.740</span></td><td><span class="mid">0.782</span></td><td><span class="mid">0.811</span></td><td><span class="mid">0.550</span></td><td></td><td></td><td class='source'>paper2601_splitmae_runs_youden_summary/youden_eval_summary.json</td></tr>
+<tr><td>paper2601_splitmae_runs_stable_static_gated_clip_local5 | gated | all | L5 | clip3.0</td><td>youden diagnostic</td><td>Youden/best_threshold + EENT-train static scaling</td><td><span class="mid">0.890</span></td><td><span class="mid">0.906</span></td><td><span class="mid">0.929</span></td><td>[42 6; 7 63]</td><td><span class="mid">0.775</span></td><td><span class="mid">0.743</span></td><td><span class="mid">0.829</span></td><td><span class="good">0.900</span></td><td>[90 10; 35 65]</td><td></td><td class='source'>paper2601_splitmae_runs_stable_static_gated_clip_local5/ast_stage2_ai_eval_youden_eent_train_scaling.json</td></tr>
+<tr><td>pathology22 | eent_train_scaling</td><td>youden diagnostic</td><td>Youden/best_threshold + eent_train_scaling</td><td><span class="mid">0.890</span></td><td><span class="mid">0.908</span></td><td><span class="mid">0.930</span></td><td></td><td><span class="mid">0.740</span></td><td><span class="mid">0.740</span></td><td><span class="mid">0.820</span></td><td><span class="mid">0.740</span></td><td></td><td></td><td class='source'>paper2601_splitmae_runs_youden_summary/youden_eval_summary.json</td></tr>
+<tr><td>pathology22 | svd_independent_scaling</td><td>youden diagnostic</td><td>Youden/best_threshold + svd_independent_scaling</td><td><span class="mid">0.890</span></td><td><span class="mid">0.908</span></td><td><span class="mid">0.930</span></td><td></td><td><span class="mid">0.750</span></td><td><span class="mid">0.745</span></td><td><span class="mid">0.828</span></td><td><span class="good">0.770</span></td><td></td><td></td><td class='source'>paper2601_splitmae_runs_youden_summary/youden_eval_summary.json</td></tr>
+<tr><td>pathology_source_tilt | eent_train_scaling</td><td>youden diagnostic</td><td>Youden/best_threshold + eent_train_scaling</td><td><span class="mid">0.890</span></td><td><span class="mid">0.906</span></td><td><span class="mid">0.924</span></td><td></td><td><span class="mid">0.775</span></td><td><span class="mid">0.776</span></td><td><span class="mid">0.834</span></td><td><span class="good">0.770</span></td><td></td><td></td><td class='source'>paper2601_splitmae_runs_youden_summary/youden_eval_summary.json</td></tr>
+<tr><td>pathology_source_tilt | svd_independent_scaling</td><td>youden diagnostic</td><td>Youden/best_threshold + svd_independent_scaling</td><td><span class="mid">0.890</span></td><td><span class="mid">0.906</span></td><td><span class="mid">0.924</span></td><td></td><td><span class="mid">0.785</span></td><td><span class="mid">0.777</span></td><td><span class="mid">0.831</span></td><td><span class="good">0.820</span></td><td></td><td></td><td class='source'>paper2601_splitmae_runs_youden_summary/youden_eval_summary.json</td></tr>
+<tr><td>paper2601_splitmae_runs_ssast_like_local5 | L5</td><td>youden diagnostic</td><td>Youden/best_threshold</td><td><span class="bad">0.780</span></td><td><span class="bad">0.812</span></td><td><span class="bad">0.840</span></td><td>[36 12; 14 56]</td><td><span class="mid">0.700</span></td><td><span class="mid">0.700</span></td><td><span class="mid">0.744</span></td><td><span class="mid">0.700</span></td><td>[70 30; 30 70]</td><td></td><td class='source'>paper2601_splitmae_runs_ssast_like_local5/ast_stage2_ai_eval_youden.json</td></tr>
+</tbody>
+</table>
+</div>
+
+<details>
+<summary>Scanned JSON files (60)</summary>
+<ul>
+<li><code>paper2601_splitmae_runs_ablation_pathology22_local1/ast_stage2_ai_eval_eent_train_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology22_local1/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology22_local1/ast_stage2_ai_eval_svd_independent_static_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology22_local1/ast_stage2_ai_eval_youden_eent_train_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology22_local1/ast_stage2_ai_eval_youden_svd_independent_static_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology22_local5/ast_stage2_ai_eval_eent_train_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology22_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology22_local5/ast_stage2_ai_eval_svd_independent_static_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology22_local5/ast_stage2_ai_eval_youden_eent_train_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology22_local5/ast_stage2_ai_eval_youden_svd_independent_static_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1/ast_stage2_ai_eval_eent_train_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1/ast_stage2_ai_eval_svd_independent_static_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1/ast_stage2_ai_eval_youden_eent_train_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_source_tilt_local1/ast_stage2_ai_eval_youden_svd_independent_static_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5/ast_stage2_ai_eval_eent_train_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5/ast_stage2_ai_eval_svd_independent_static_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5/ast_stage2_ai_eval_youden_eent_train_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_source_tilt_local5/ast_stage2_ai_eval_youden_svd_independent_static_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_voicing_local1/ast_stage2_ai_eval_eent_train_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_voicing_local1/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_voicing_local1/ast_stage2_ai_eval_svd_independent_static_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_voicing_local1/ast_stage2_ai_eval_youden_eent_train_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_voicing_local1/ast_stage2_ai_eval_youden_svd_independent_static_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_voicing_local5/ast_stage2_ai_eval_eent_train_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_voicing_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_voicing_local5/ast_stage2_ai_eval_svd_independent_static_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_voicing_local5/ast_stage2_ai_eval_youden_eent_train_scaling.json</code></li><li><code>paper2601_splitmae_runs_ablation_pathology_voicing_local5/ast_stage2_ai_eval_youden_svd_independent_static_scaling.json</code></li><li><code>paper2601_splitmae_runs_control_all131_gated_clip_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</code></li><li><code>paper2601_splitmae_runs_control_all131_gated_clip_local5/ast_stage2_ai_eval_fixed.json</code></li><li><code>paper2601_splitmae_runs_control_mae_only_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</code></li><li><code>paper2601_splitmae_runs_control_mae_only_local5/ast_stage2_ai_eval_fixed.json</code></li><li><code>paper2601_splitmae_runs_control_pathology22_gated_clip_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</code></li><li><code>paper2601_splitmae_runs_control_pathology22_gated_clip_local5/ast_stage2_ai_eval_fixed.json</code></li><li><code>paper2601_splitmae_runs_control_source_tilt_gated_clip_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</code></li><li><code>paper2601_splitmae_runs_control_source_tilt_gated_clip_local5/ast_stage2_ai_eval_fixed.json</code></li><li><code>paper2601_splitmae_runs_control_static_only_all131_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</code></li><li><code>paper2601_splitmae_runs_control_static_only_all131_local5/ast_stage2_ai_eval_fixed.json</code></li><li><code>paper2601_splitmae_runs_local1/ast_stage2_ai_eval.json</code></li><li><code>paper2601_splitmae_runs_local1/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</code></li><li><code>paper2601_splitmae_runs_local1/ast_stage2_ai_eval_svd_independent_static_scaling.json</code></li><li><code>paper2601_splitmae_runs_local1/ast_stage2_ai_eval_youden_eent_train_scaling.json</code></li><li><code>paper2601_splitmae_runs_local1/ast_stage2_ai_eval_youden_svd_independent_static_scaling.json</code></li><li><code>paper2601_splitmae_runs_local5/ast_stage2_ai_eval.json</code></li><li><code>paper2601_splitmae_runs_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</code></li><li><code>paper2601_splitmae_runs_local5/ast_stage2_ai_eval_svd_independent_static_scaling.json</code></li><li><code>paper2601_splitmae_runs_local5/ast_stage2_ai_eval_youden_eent_train_scaling.json</code></li><li><code>paper2601_splitmae_runs_local5/ast_stage2_ai_eval_youden_svd_independent_static_scaling.json</code></li><li><code>paper2601_splitmae_runs_ssast_like_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</code></li><li><code>paper2601_splitmae_runs_ssast_like_local5/ast_stage2_ai_eval_fixed.json</code></li><li><code>paper2601_splitmae_runs_ssast_like_local5/ast_stage2_ai_eval_youden.json</code></li><li><code>paper2601_splitmae_runs_stable_static_gated_clip_local5/ast_stage2_ai_eval_eent_val_threshold_macro_f1.json</code></li><li><code>paper2601_splitmae_runs_stable_static_gated_clip_local5/ast_stage2_ai_eval_fixed.json</code></li><li><code>paper2601_splitmae_runs_stable_static_gated_clip_local5/ast_stage2_ai_eval_youden_eent_train_scaling.json</code></li><li><code>paper2601_splitmae_runs_youden_summary/youden_eval_summary.json</code></li><li><code>saved_models/eval_results_fixed.json</code></li><li><code>saved_models/eval_results_split_fixed.json</code></li><li><code>saved_models/eval_results_split_ssast_fixed.json</code></li>
+</ul>
+</details>
+</main>
+<script>
+(() => {
+  const replacements = [
+    [/paper2601_splitmae_runs_control_all131_gated_clip_local5 \| gated \| all \| L5 \| clip3\.0/g, "All131 gated-clip L5"],
+    [/paper2601_splitmae_runs_control_static_only_all131_local5 \| static_only \| all \| L5 \| clip3\.0/g, "All131 static-only L5"],
+    [/paper2601_splitmae_runs_control_mae_only_local5 \| audio_only \| all \| L5/g, "MAE-only L5"],
+    [/paper2601_splitmae_runs_control_pathology22_gated_clip_local5 \| gated \| pathology \| L5 \| clip3\.0/g, "Pathology22 gated-clip L5"],
+    [/paper2601_splitmae_runs_control_source_tilt_gated_clip_local5 \| gated \| pathology_source_tilt \| L5 \| clip3\.0/g, "Pathology+source-tilt gated-clip L5"],
+    [/paper2601_splitmae_runs_stable_static_gated_clip_local5 \| gated \| all \| L5 \| clip3\.0/g, "Stable-static gated-clip L5"],
+    [/paper2601_splitmae_runs_ssast_like_local5 \| L5/g, "SSAST-like control L5"],
+    [/paper2601_splitmae_runs_local5 \| L5/g, "SplitAST all131 L5"],
+    [/paper2601_splitmae_runs_local1 \| L1/g, "SplitAST all131 L1"],
+    [/paper2601_splitmae_runs_ablation_pathology_source_tilt_local5 \| pathology_source_tilt \| L5/g, "Pathology+source-tilt L5"],
+    [/paper2601_splitmae_runs_ablation_pathology_source_tilt_local1 \| pathology_source_tilt \| L1/g, "Pathology+source-tilt L1"],
+    [/paper2601_splitmae_runs_ablation_pathology_voicing_local5 \| pathology_voicing \| L5/g, "Pathology+voicing L5"],
+    [/paper2601_splitmae_runs_ablation_pathology_voicing_local1 \| pathology_voicing \| L1/g, "Pathology+voicing L1"],
+    [/paper2601_splitmae_runs_ablation_pathology22_local5 \| pathology \| L5/g, "Pathology22 L5"],
+    [/paper2601_splitmae_runs_ablation_pathology22_local1 \| pathology \| L1/g, "Pathology22 L1"],
+    [/paper2601_splitmae_runs_youden_summary/g, "Youden summary"],
+    [/paper2601_splitmae_runs_/g, ""],
+    [/paper2601/g, "SplitAST"],
+    [/eent_validation_threshold/g, "EENT-val threshold"],
+    [/Youden\/best_threshold/g, "Youden"],
+    [/fixed 0\.5 \+ SVD-independent static scaling/g, "fixed 0.5 + SVD independent scaling"],
+    [/fixed 0\.5 \+ EENT-train static scaling/g, "fixed 0.5 + EENT train scaling"],
+    [/SVD-independent/g, "SVD independent"],
+    [/svd_independent_scaling/g, "SVD independent"],
+    [/eent_train_scaling/g, "EENT train"],
+    [/ast_stage2_ai_eval_/g, ""],
+    [/_eent_val_threshold_macro_f1/g, "_eent_val_threshold"],
+    [/_svd_independent_static_scaling/g, "_svd_independent"],
+    [/_eent_train_scaling/g, "_eent_train"],
+    [/_youden/g, "_youden"],
+    [/\.json/g, ""],
+  ];
+
+  function friendly(value) {
+    let text = value;
+    for (const [pattern, replacement] of replacements) {
+      text = text.replace(pattern, replacement);
+    }
+    return text;
+  }
+
+  function rewriteText(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      node.nodeValue = friendly(node.nodeValue);
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const tag = node.tagName.toLowerCase();
+    if (tag === "script" || tag === "style") return;
+    for (const child of Array.from(node.childNodes)) rewriteText(child);
+  }
+
+  rewriteText(document.body);
+
+  function shortBarLabel(raw) {
+    const text = friendly(raw.trim());
+    if (text.includes("centralized CNN") || text.includes("split CNN") || text.includes("split SSAST")) return text;
+    if (text.includes("stable_st") || text.includes("Stable-static")) return "Stable-static gated-clip L5";
+    if (text.includes("control_p")) return "Controlled pathology";
+    if (text.includes("control")) return "Controlled all131";
+    if (text.includes("pathology_source_tilt") || text.includes("Pathology+source-tilt")) {
+      if (text.includes("svd_indep") || text.includes("SVD independent")) return "Pathology+source-tilt | SVD independent";
+      if (text.includes("eent_trai") || text.includes("EENT train")) return "Pathology+source-tilt | EENT train";
+      return "Pathology+source-tilt";
+    }
+    if (text.includes("pathology_voicing") || text.includes("Pathology+voicing")) {
+      if (text.includes("svd_indep") || text.includes("SVD independent")) return "Pathology+voicing | SVD independent";
+      if (text.includes("eent_trai") || text.includes("EENT train")) return "Pathology+voicing | EENT train";
+      return "Pathology+voicing";
+    }
+    if (text.includes("pathology22") || text.includes("Pathology22")) {
+      if (text.includes("svd_indep") || text.includes("SVD independent")) return "Pathology22 | SVD independent";
+      if (text.includes("eent_trai") || text.includes("EENT train")) return "Pathology22 | EENT train";
+      return "Pathology22";
+    }
+    if (text.includes("ablation")) return "Static ablation";
+    if (text.includes("local5")) return "SplitAST all131 L5";
+    if (text.includes("local1")) return "SplitAST all131 L1";
+    return text.replace(/\s*\|.*$/, "");
+  }
+
+  document.querySelectorAll("svg .bar-label").forEach((label) => {
+    const original = label.textContent.trim();
+    const shorter = shortBarLabel(original);
+    label.textContent = shorter;
+    label.setAttribute("data-original", original);
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = original;
+    label.appendChild(title);
+  });
+
+  document.querySelectorAll("tbody tr").forEach((row) => {
+    const cells = row.cells;
+    if (!cells || cells.length < 14) return;
+    const notes = cells[12].textContent.trim();
+    const source = cells[13].textContent.trim();
+    const hover = [notes, source].filter(Boolean).join(" | ");
+    if (hover) row.title = hover;
+    [cells[6], cells[11]].forEach((cell) => {
+      if (!cell.textContent.trim()) {
+        cell.textContent = "summary only";
+        cell.classList.add("missing-cm");
+      } else {
+        cell.textContent = cell.textContent.replace(/;\s*/g, "; ");
+      }
+    });
+  });
+
+  document.querySelectorAll("title").forEach((el) => {
+    el.textContent = friendly(el.textContent);
+  });
+
+  const keepLabels = new Set(["centralized CNN", "split CNN", "split SSAST"]);
+  document.querySelectorAll("svg .point-label").forEach((label) => {
+    const text = label.textContent.trim();
+    if (keepLabels.has(text)) {
+      label.classList.add("anchor-label");
+    } else {
+      label.remove();
+    }
+  });
+
+  const landscape = Array.from(document.querySelectorAll("h2")).find((h) =>
+    h.textContent.includes("EENT vs SVD")
+  );
+  const chart = landscape ? landscape.nextElementSibling : null;
+  if (chart && chart.matches("svg.chart")) {
+    chart.insertAdjacentHTML(
+      "afterend",
+      '<div class="chart-help">Point labels are limited to the three baselines. Hover any point for the exact run name and EENT/SVD metrics.</div>'
+    );
+  }
+})();
+</script>
+</body>
+</html>

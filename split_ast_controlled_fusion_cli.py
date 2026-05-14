@@ -49,7 +49,7 @@ from split_ast_static_features import (
 )
 
 
-CONTROLLED_FUSION_VERSION = 1
+CONTROLLED_FUSION_VERSION = 2
 
 
 def _logit(p: float) -> float:
@@ -77,18 +77,25 @@ class ControlledFeatureAttentionFFNN(nn.Module):
         static_projection_dim: int = 0,
         static_dropout: float = 0.0,
         static_gate_init: Optional[float] = None,
+        static_max_weight: float = 0.35,
+        static_anomaly_threshold: float = 2.5,
+        static_anomaly_scale: float = 1.0,
+        static_aux_hidden_dim: int = 64,
     ) -> None:
         super().__init__()
         fusion_mode = str(fusion_mode).lower().strip()
-        if fusion_mode not in {"audio_only", "static_only", "audio_static", "gated"}:
+        if fusion_mode not in {"audio_only", "static_only", "audio_static", "gated", "audio_primary_aux"}:
             raise ValueError(f"Unknown fusion mode: {fusion_mode}")
         self.audio_feature_dim = int(audio_feature_dim)
         self.static_feature_dim = int(static_feature_dim)
         self.num_labels = int(num_labels)
         self.fusion_mode = fusion_mode
-        self.use_audio = fusion_mode in {"audio_only", "audio_static", "gated"}
-        self.use_static = fusion_mode in {"static_only", "audio_static", "gated"} and self.static_feature_dim > 0
-        if fusion_mode in {"static_only", "audio_static", "gated"} and self.static_feature_dim <= 0:
+        self.use_audio = fusion_mode in {"audio_only", "audio_static", "gated", "audio_primary_aux"}
+        self.use_static = (
+            fusion_mode in {"static_only", "audio_static", "gated", "audio_primary_aux"}
+            and self.static_feature_dim > 0
+        )
+        if fusion_mode in {"static_only", "audio_static", "gated", "audio_primary_aux"} and self.static_feature_dim <= 0:
             raise ValueError(f"fusion_mode={fusion_mode!r} requires static_feature_dim > 0")
 
         self.static_dropout = nn.Dropout(float(static_dropout)) if float(static_dropout) > 0 else nn.Identity()
@@ -109,6 +116,41 @@ class ControlledFeatureAttentionFFNN(nn.Module):
             self.static_gate_logit = nn.Parameter(torch.tensor(_logit(init), dtype=torch.float32))
         else:
             self.register_parameter("static_gate_logit", None)
+
+        if fusion_mode == "audio_primary_aux":
+            self.static_max_weight = max(float(static_max_weight), 0.0)
+            self.static_anomaly_threshold = float(static_anomaly_threshold)
+            self.static_anomaly_scale = max(float(static_anomaly_scale), 0.0)
+            init = 0.20 if static_gate_init is None else float(static_gate_init)
+            self.static_aux_gate_logit = nn.Parameter(torch.tensor(_logit(init), dtype=torch.float32))
+
+            self.audio_norm = nn.LayerNorm(self.audio_feature_dim)
+            self.audio_attention = nn.Sequential(
+                nn.Linear(self.audio_feature_dim, self.audio_feature_dim),
+                nn.GELU(),
+                nn.Dropout(float(dropout)),
+                nn.Linear(self.audio_feature_dim, self.audio_feature_dim),
+                nn.Sigmoid(),
+            )
+            audio_layers: list[nn.Module] = []
+            prev = self.audio_feature_dim
+            for width in hidden:
+                audio_layers.extend([nn.Linear(prev, int(width)), nn.GELU(), nn.Dropout(float(dropout))])
+                prev = int(width)
+            audio_layers.append(nn.Linear(prev, int(num_labels)))
+            self.audio_ffnn = nn.Sequential(*audio_layers)
+
+            aux_hidden = int(static_aux_hidden_dim)
+            if aux_hidden <= 0:
+                aux_hidden = max(16, min(128, static_out_dim * 2))
+            self.static_aux_norm = nn.LayerNorm(static_out_dim)
+            self.static_aux_ffnn = nn.Sequential(
+                nn.Linear(static_out_dim, aux_hidden),
+                nn.GELU(),
+                nn.Dropout(float(max(static_dropout, dropout))),
+                nn.Linear(aux_hidden, int(num_labels)),
+            )
+            return
 
         self.input_dim = (self.audio_feature_dim if self.use_audio else 0) + static_out_dim
         if self.input_dim <= 0:
@@ -142,6 +184,15 @@ class ControlledFeatureAttentionFFNN(nn.Module):
             static_rep = static_rep * torch.sigmoid(self.static_gate_logit)
         return static_rep
 
+    def _static_anomaly(self, static_features: torch.Tensor) -> torch.Tensor:
+        threshold = float(getattr(self, "static_anomaly_threshold", 0.0))
+        scale = float(getattr(self, "static_anomaly_scale", 0.0))
+        if threshold <= 0 or scale <= 0:
+            return static_features.new_zeros(static_features.shape[0], 1)
+        z = torch.nan_to_num(static_features.float(), nan=0.0, posinf=threshold + 10.0, neginf=-(threshold + 10.0))
+        excess = torch.relu(z.abs() - threshold)
+        return excess.mean(dim=-1, keepdim=True).clamp(max=20.0)
+
     def forward(
         self,
         audio_features: torch.Tensor,
@@ -149,6 +200,26 @@ class ControlledFeatureAttentionFFNN(nn.Module):
         *,
         return_attention: bool = False,
     ):
+        if self.fusion_mode == "audio_primary_aux":
+            if static_features is None:
+                static_features = audio_features.new_zeros(audio_features.shape[0], self.static_feature_dim)
+            static_features = static_features.float().to(audio_features.device)
+            if static_features.shape[-1] != self.static_feature_dim:
+                raise ValueError(f"Expected static dim {self.static_feature_dim}, got {static_features.shape[-1]}")
+
+            audio = self.audio_norm(audio_features)
+            audio_attn = self.audio_attention(audio)
+            audio_logits = self.audio_ffnn(audio * audio_attn)
+
+            static_rep = self.static_aux_norm(self._static_branch(audio_features, static_features))
+            static_logits = self.static_aux_ffnn(static_rep)
+            base_weight = torch.sigmoid(self.static_aux_gate_logit) * float(self.static_max_weight)
+            domain_weight = torch.exp(-float(self.static_anomaly_scale) * self._static_anomaly(static_features))
+            logits = audio_logits + (base_weight * domain_weight) * static_logits
+            if return_attention:
+                return logits, audio_attn
+            return logits
+
         parts: list[torch.Tensor] = []
         if self.use_audio:
             parts.append(audio_features)
@@ -174,7 +245,7 @@ class ControlledStaticInfo:
 def _add_controlled_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--fusion-mode",
-        choices=["audio_only", "static_only", "audio_static", "gated"],
+        choices=["audio_only", "static_only", "audio_static", "gated", "audio_primary_aux"],
         default="gated",
         help="Controlled Stage 2 feature-fusion mode.",
     )
@@ -186,6 +257,30 @@ def _add_controlled_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--static-dropout", type=float, default=0.30)
     p.add_argument("--static-gate-init", type=float, default=0.25)
+    p.add_argument(
+        "--static-max-weight",
+        type=float,
+        default=0.35,
+        help="audio_primary_aux only: maximum multiplier for the static auxiliary logits.",
+    )
+    p.add_argument(
+        "--static-anomaly-threshold",
+        type=float,
+        default=2.5,
+        help="audio_primary_aux only: normalized static |z| threshold before static logits are downweighted.",
+    )
+    p.add_argument(
+        "--static-anomaly-scale",
+        type=float,
+        default=1.0,
+        help="audio_primary_aux only: exponential decay strength for static-domain anomaly downweighting.",
+    )
+    p.add_argument(
+        "--static-aux-hidden-dim",
+        type=int,
+        default=64,
+        help="audio_primary_aux only: hidden width of the small static auxiliary branch.",
+    )
     p.add_argument(
         "--static-z-clip",
         type=float,
@@ -207,6 +302,10 @@ def _controlled_dict_from_args(args: argparse.Namespace) -> dict[str, Any]:
         "static_projection_dim": int(args.static_projection_dim),
         "static_dropout": float(args.static_dropout),
         "static_gate_init": None if args.static_gate_init is None else float(args.static_gate_init),
+        "static_max_weight": float(args.static_max_weight),
+        "static_anomaly_threshold": float(args.static_anomaly_threshold),
+        "static_anomaly_scale": float(args.static_anomaly_scale),
+        "static_aux_hidden_dim": int(args.static_aux_hidden_dim),
         "static_z_clip": None if float(args.static_z_clip) <= 0 else float(args.static_z_clip),
         "freeze_audio_for_static_only": bool(args.freeze_audio_for_static_only),
     }
@@ -221,6 +320,10 @@ def _apply_controlled_metadata(args: argparse.Namespace, meta: dict[str, Any]) -
         ("static_projection_dim", 0),
         ("static_dropout", 0.0),
         ("static_gate_init", 0.25),
+        ("static_max_weight", 0.35),
+        ("static_anomaly_threshold", 2.5),
+        ("static_anomaly_scale", 1.0),
+        ("static_aux_hidden_dim", 64),
         ("static_z_clip", 0.0),
         ("freeze_audio_for_static_only", True),
     ):
@@ -274,6 +377,10 @@ def _replace_classifier(server, args: argparse.Namespace) -> None:
         static_projection_dim=int(args.static_projection_dim),
         static_dropout=float(args.static_dropout),
         static_gate_init=getattr(args, "static_gate_init", 0.25),
+        static_max_weight=float(getattr(args, "static_max_weight", 0.35)),
+        static_anomaly_threshold=float(getattr(args, "static_anomaly_threshold", 2.5)),
+        static_anomaly_scale=float(getattr(args, "static_anomaly_scale", 1.0)),
+        static_aux_hidden_dim=int(getattr(args, "static_aux_hidden_dim", 64)),
     )
 
 
